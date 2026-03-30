@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.venv/
+data/input/
+*.xlsx
+!data/templates/*.csv
+.streamlit/
+.pytest_cache/
