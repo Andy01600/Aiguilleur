@@ -251,6 +251,38 @@ def page_planification():
             df_planning = planning_vers_dataframe(result)
             st.dataframe(df_planning, use_container_width=True)
 
+            # Détail des équipes potentiellement impactées par compétition
+            equipes_chargees = equipes_df is not None and not equipes_df.empty
+            has_impactes = equipes_chargees and any(
+                d.get("equipes_impactees") for d in result.detail_par_date
+            )
+            if equipes_chargees:
+                label_expander = (
+                    "🔍 Équipes potentiellement impactées par compétition"
+                    if has_impactes
+                    else "✅ Aucune équipe impactée par les vacances"
+                )
+                with st.expander(label_expander, expanded=has_impactes):
+                    for det in result.detail_par_date:
+                        equipes_imp = det.get("equipes_impactees", [])
+                        date_str = det["date"].strftime("%d/%m/%Y")
+                        if equipes_imp:
+                            zones_str = ", ".join(det["zones_impactees"])
+                            st.markdown(
+                                f"**{det['competition']}** ({date_str}) "
+                                f"— zones {zones_str} en vacances "
+                                f"— **{len(equipes_imp)} équipe(s) impactée(s)**"
+                            )
+                            st.dataframe(
+                                pd.DataFrame(equipes_imp),
+                                use_container_width=True,
+                                hide_index=True,
+                            )
+                        else:
+                            st.markdown(
+                                f"**{det['competition']}** ({date_str}) — ✅ Aucune équipe impactée"
+                            )
+
             # Export Excel (vue lisible)
             sheets = {
                 "Planning": df_planning,
@@ -536,7 +568,8 @@ def _afficher_resultats_affectation(
         for i, nom_comp in enumerate(noms_comps):
             with onglets[i]:
                 df_comp = sheets.get(nom_comp[:31], pd.DataFrame())
-                capacite = int(competitions_df[competitions_df["nom_competition"] == nom_comp]["capacite_max"].iloc[0])
+                cap_val = competitions_df[competitions_df["nom_competition"] == nom_comp]["capacite_max"].iloc[0]
+                capacite = int(cap_val) if pd.notna(cap_val) else 24
                 nb_aff = len(df_comp)
                 st.metric(
                     "Équipes affectées",

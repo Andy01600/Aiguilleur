@@ -109,6 +109,64 @@ def calculer_score_total(
 # Algorithme de sélection des dates
 # ---------------------------------------------------------------------------
 
+def assigner_competitions_dates_optimal(
+    comps_libres: list[str],
+    dates_libres: list[date],
+    competitions_df: pd.DataFrame,
+    vacances: dict,
+) -> list[tuple[date, str]]:
+    """
+    Assigne optimalement les compétitions aux dates en minimisant
+    le nombre de compétitions placées pendant les vacances de leur zone locale.
+
+    Par exemple : si Nantes (Zone B) et Levallois (Zone C) sont disponibles,
+    et que le 14 février est en vacances Zone B mais pas Zone C, l'algorithme
+    placera Levallois le 14 février et Nantes à une autre date.
+
+    Utilise une recherche exhaustive sur les permutations (n ≤ 8).
+    """
+    n = len(comps_libres)
+    if n == 0:
+        return []
+    if n == 1:
+        return [(dates_libres[0], comps_libres[0])]
+
+    # Zone locale de chaque compétition (d'après son adresse)
+    comp_index = competitions_df.set_index("nom_competition")
+    zones_comps: list[str | None] = []
+    for nom in comps_libres:
+        zone = None
+        if nom in comp_index.index:
+            adresse = str(comp_index.loc[nom, "adresse"])
+            zone = adresse_vers_zone(adresse)
+        zones_comps.append(zone)
+
+    # Recherche de la permutation minimisant les conflits locaux
+    meilleur_cout = float("inf")
+    meilleure_perm: list[int] = list(range(n))
+
+    # Pour n > 8, fallback dans l'ordre d'entrée (évite combinatoire explosive)
+    if n > 8:
+        return list(zip(dates_libres, comps_libres))
+
+    for perm in itertools.permutations(range(n)):
+        cout = sum(
+            1
+            for comp_idx, date_idx in enumerate(perm)
+            if zones_comps[comp_idx] and est_en_vacances(dates_libres[date_idx], zones_comps[comp_idx], vacances)
+        )
+        if cout < meilleur_cout:
+            meilleur_cout = cout
+            meilleure_perm = list(perm)
+            if cout == 0:
+                break  # Impossible de faire mieux
+
+    return sorted(
+        [(dates_libres[meilleure_perm[i]], comps_libres[i]) for i in range(n)],
+        key=lambda x: x[0],
+    )
+
+
 def recherche_exhaustive(
     candidats: list[SamediCandidat],
     n: int,
@@ -281,7 +339,11 @@ def generer_planning(
     planning: list[tuple[date, str]] = []
     for d, nom in zip(dates_forcees, comps_forcees):
         planning.append((d, nom))
-    for d, nom in zip(dates_libres_choisies, comps_libres):
+    # Assignation optimale : chaque compétition va sur la date où sa zone locale
+    # est le moins en vacances possible (algorithme hongrois simplifié)
+    for d, nom in assigner_competitions_dates_optimal(
+        comps_libres, dates_libres_choisies, competitions_df, vacances
+    ):
         planning.append((d, nom))
     planning.sort(key=lambda x: x[0])
 
@@ -289,17 +351,33 @@ def generer_planning(
     scores_par_date = {c.date: c.score_vacances for c in candidats}
     scores_par_date.update(scores_forces)
 
+    # Précalculer le nom de la colonne nom_equipe (optionnelle)
+    col_nom_eq = "nom_equipe" if (equipes_df is not None and "nom_equipe" in equipes_df.columns) else None
+
     detail: list[dict] = []
     score_vac_total = 0.0
     for d, nom in planning:
         sv = scores_par_date.get(d, 0.0)
         _, zones = scorer_samedi(d, vacances, equipes_par_zone)
         score_vac_total += sv
+
+        # Lister les équipes dont la zone est en vacances ce jour-là
+        equipes_impactees: list[dict] = []
+        if equipes_df is not None and not equipes_df.empty and zones:
+            for _, row_eq in equipes_df.iterrows():
+                zone_eq = adresse_vers_zone(str(row_eq["adresse"]))
+                if zone_eq in zones:
+                    equipes_impactees.append({
+                        "numero_equipe": row_eq["numero_equipe"],
+                        "nom_equipe": str(row_eq[col_nom_eq]) if col_nom_eq else str(row_eq["numero_equipe"]),
+                    })
+
         detail.append({
             "date": d,
             "competition": nom,
             "score_vacances": sv,
             "zones_impactees": zones,
+            "equipes_impactees": equipes_impactees,
         })
 
     nb_trous = calculer_nb_trous([d for d, _ in planning])

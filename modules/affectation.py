@@ -182,7 +182,7 @@ def construire_competitions(
     competitions: dict[str, Competition] = {}
     for _, ligne in competitions_df.iterrows():
         nom = str(ligne["nom_competition"]).strip()
-        capacite = int(ligne["capacite_max"])
+        capacite = int(ligne["capacite_max"]) if pd.notna(ligne.get("capacite_max")) else 24
 
         date_comp = None
         if "date_forcee" in ligne.index and pd.notna(ligne.get("date_forcee")):
@@ -325,6 +325,7 @@ def executer_tour(
     # Regrouper les demandeurs par compétition pour leur vœu de rang `tour_num`
     demandeurs_par_comp: dict[str, list[Equipe]] = {nom: [] for nom in competitions}
 
+    numeros_dans_demandeurs: set[int] = set()
     for equipe in eligibles.values():
         # Trouver le prochain vœu non encore satisfait
         voeux_restants = [
@@ -336,6 +337,7 @@ def executer_tour(
         voeu_principal = voeux_restants[0]
         if voeu_principal in demandeurs_par_comp:
             demandeurs_par_comp[voeu_principal].append(equipe)
+            numeros_dans_demandeurs.add(equipe.numero)
 
     # Trier les compétitions par demande décroissante (plus sur-souscrites d'abord)
     comps_triees = sorted(
@@ -344,7 +346,13 @@ def executer_tour(
         reverse=True,
     )
 
-    non_affectes_phase_a: list[Equipe] = []
+    # Équipes dont le 1er vœu restant ne correspond à aucune compétition connue
+    # → directement en Phase B pour tentative sur les vœux suivants ou fallback
+    non_affectes_phase_a: list[Equipe] = [
+        eq for eq in eligibles.values()
+        if eq.numero not in numeros_dans_demandeurs
+        and any(v not in eq.affectations for v in eq.voeux)
+    ]
 
     for nom_comp in comps_triees:
         comp = competitions[nom_comp]
@@ -539,6 +547,7 @@ def lancer_affectation(
     alertes_validation = valider_voeux(voeux_df, competitions_df)
 
     centroides = charger_centroides()
+
     vacances: dict | None = None
     try:
         vacances = charger_vacances(saison_vacances)
@@ -550,6 +559,23 @@ def lancer_affectation(
 
     equipes = construire_equipes(voeux_df)
     competitions = construire_competitions(competitions_df, saison_vacances)
+
+    # Normalisation des noms de vœux vers les noms officiels des compétitions.
+    # Gère les différences de casse, d'espaces ou d'encodage légères.
+    noms_comp_lower: dict[str, str] = {
+        nom.strip().lower(): nom for nom in competitions
+    }
+    for equipe in equipes.values():
+        voeux_corriges = []
+        for v in equipe.voeux:
+            if v in competitions:
+                voeux_corriges.append(v)
+            elif v.strip().lower() in noms_comp_lower:
+                # Correspondance trouvée malgré différence de casse / espaces
+                voeux_corriges.append(noms_comp_lower[v.strip().lower()])
+            else:
+                voeux_corriges.append(v)
+        equipe.voeux = voeux_corriges
 
     # Vérification capacité globale
     total_capacite = sum(c.capacite for c in competitions.values())
