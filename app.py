@@ -14,12 +14,7 @@ import streamlit as st
 # Ajouter la racine au PYTHONPATH pour les imports relatifs
 sys.path.insert(0, str(Path(__file__).parent))
 
-from modules.affectation import (
-    construire_competitions,
-    construire_equipes,
-    lancer_affectation,
-    resultats_vers_dataframes,
-)
+from modules.affectation import lancer_affectation
 from modules.planning import (
     generer_planning,
     planning_vers_dataframe,
