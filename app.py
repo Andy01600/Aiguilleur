@@ -504,9 +504,8 @@ def _afficher_resultats_affectation(
     saison,
 ):
     """Affiche les résultats de l'affectation."""
-    dernier = resultats[-1]
 
-    # Alertes
+    # Alertes de l'algorithme
     for res in resultats:
         for a in res.alertes:
             if "⚠️" in a or "🔴" in a:
@@ -528,74 +527,166 @@ def _afficher_resultats_affectation(
     total_aff = sum(len(r.nouvelles_affectations) for r in resultats)
     col_m3.metric("Total affectations", total_aff)
 
+    # -----------------------------------------------------------------------
+    # Agrégation directe depuis nouvelles_affectations (sans reconstruction)
+    # Clé : nom_comp stripped → liste (tour, num_equipe)
+    # -----------------------------------------------------------------------
+    aff_par_comp: dict[str, list[tuple[int, int]]] = {}
+    for res in resultats:
+        for num, nom_comp in res.nouvelles_affectations.items():
+            cle = str(nom_comp).strip()
+            if cle not in aff_par_comp:
+                aff_par_comp[cle] = []
+            aff_par_comp[cle].append((res.tour, int(num)))
+
+    tous_nums_affectes: set[int] = {
+        num for paires in aff_par_comp.values() for (_, num) in paires
+    }
+
+    # -----------------------------------------------------------------------
+    # Table de référence : num_equipe → {nom, adresse, voeux}
+    # -----------------------------------------------------------------------
+    info_equipes: dict[int, dict] = {}
+    voeu_cols = [c for c in voeux_df.columns if c.startswith("voeu_")]
+    for _, row in voeux_df.iterrows():
+        num = int(row["numero_equipe"])
+        voeux_liste = [
+            str(row[c]).strip()
+            for c in voeu_cols
+            if pd.notna(row.get(c)) and str(row.get(c, "")).strip()
+        ]
+        info_equipes[num] = {
+            "nom": str(row.get("nom_equipe", f"Équipe {num}")).strip()
+                   if pd.notna(row.get("nom_equipe")) else f"Équipe {num}",
+            "adresse": str(row.get("adresse", "")).strip()
+                       if pd.notna(row.get("adresse")) else "",
+            "voeux": voeux_liste,
+        }
+    if equipes_df is not None:
+        for _, row in equipes_df.iterrows():
+            num = int(row["numero_equipe"])
+            info_equipes.setdefault(num, {"nom": "", "adresse": "", "voeux": []})
+            info_equipes[num]["nom"] = str(row["nom_equipe"]).strip()
+            info_equipes[num]["adresse"] = str(row["adresse"]).strip()
+
+    # -----------------------------------------------------------------------
+    # Diagnostic : compétitions sans affectation malgré des vœux
+    # -----------------------------------------------------------------------
+    noms_comps_valides = [
+        str(n).strip() for n in competitions_df["nom_competition"] if pd.notna(n)
+    ]
+    comps_sans_aff = [n for n in noms_comps_valides if n not in aff_par_comp]
+    if comps_sans_aff:
+        # Vérifier si des équipes les avaient en vœux
+        for nom_vide in comps_sans_aff:
+            equipes_avec_ce_voeu = [
+                int(row["numero_equipe"])
+                for _, row in voeux_df.iterrows()
+                if any(
+                    str(row.get(c, "")).strip() == nom_vide
+                    for c in voeu_cols
+                )
+            ]
+            if equipes_avec_ce_voeu:
+                st.warning(
+                    f"⚠️ **{nom_vide}** : 0 équipe affectée alors que "
+                    f"{len(equipes_avec_ce_voeu)} équipe(s) l'avaient en vœu. "
+                    "Vérifiez que le nom de compétition dans les vœux correspond "
+                    "exactement à celui du fichier compétitions."
+                )
+
+    # -----------------------------------------------------------------------
     # Onglets par compétition
+    # -----------------------------------------------------------------------
     st.subheader("Résultats par compétition")
 
-    # Reconstruire les structures internes pour l'affichage
-    try:
-        from modules.affectation import construire_equipes as _ce, construire_competitions as _cc, lancer_affectation as _la
-        # Relancer silencieusement pour avoir les objets Equipe et Competition complets
-        import copy as _copy
-        voeux_enrichi = voeux_df.copy()
-        if equipes_df is not None:
-            adresses = equipes_df.set_index("numero_equipe")["adresse"].to_dict()
-            noms_eq = equipes_df.set_index("numero_equipe")["nom_equipe"].to_dict()
-            voeux_enrichi["adresse"] = voeux_enrichi["numero_equipe"].map(adresses).fillna("")
-            voeux_enrichi["nom_equipe"] = voeux_enrichi["numero_equipe"].map(noms_eq).fillna(
-                voeux_enrichi["numero_equipe"].astype(str)
+    if not noms_comps_valides:
+        st.info("Aucune compétition trouvée dans le fichier.")
+        return
+
+    onglets = st.tabs(noms_comps_valides + ["Non affectées", "Résumé global"])
+    sheets_export: dict[str, pd.DataFrame] = {}
+
+    for i, nom_comp in enumerate(noms_comps_valides):
+        with onglets[i]:
+            equipes_ici = aff_par_comp.get(nom_comp, [])
+            nb_aff = len(equipes_ici)
+
+            mask = competitions_df["nom_competition"].str.strip() == nom_comp
+            cap_vals = competitions_df.loc[mask, "capacite_max"]
+            capacite = int(cap_vals.iloc[0]) if len(cap_vals) > 0 and pd.notna(cap_vals.iloc[0]) else 24
+
+            st.metric(
+                "Équipes affectées",
+                f"{nb_aff} / {capacite}",
+                delta=f"{round(nb_aff / capacite * 100)}% de remplissage" if capacite else "",
             )
-        equipes_obj = _ce(voeux_enrichi)
-        competitions_obj = _cc(competitions_df)
 
-        # Appliquer les affectations
-        for res in resultats:
-            for num, nom_comp in res.nouvelles_affectations.items():
-                if num in equipes_obj and nom_comp in competitions_obj:
-                    if nom_comp not in equipes_obj[num].affectations:
-                        equipes_obj[num].affectations.append(nom_comp)
-                    if num not in competitions_obj[nom_comp].equipes_affectees:
-                        competitions_obj[nom_comp].equipes_affectees.append(num)
-                        competitions_obj[nom_comp].places_restantes -= 1
-
-        sheets = resultats_vers_dataframes(resultats, equipes_obj, competitions_obj)
-    except Exception:
-        sheets = {}
-
-    # Afficher un onglet par compétition
-    noms_comps = list(competitions_df["nom_competition"])
-    if noms_comps and sheets:
-        onglets = st.tabs(noms_comps + ["Non affectées", "Résumé global"])
-        for i, nom_comp in enumerate(noms_comps):
-            with onglets[i]:
-                df_comp = sheets.get(nom_comp[:31], pd.DataFrame())
-                cap_val = competitions_df[competitions_df["nom_competition"] == nom_comp]["capacite_max"].iloc[0]
-                capacite = int(cap_val) if pd.notna(cap_val) else 24
-                nb_aff = len(df_comp)
-                st.metric(
-                    "Équipes affectées",
-                    f"{nb_aff} / {capacite}",
-                    delta=f"{round(nb_aff/capacite*100)}% de remplissage" if capacite else "",
-                )
-                if not df_comp.empty:
-                    st.dataframe(df_comp, use_container_width=True)
-                else:
-                    st.info("Aucune équipe affectée.")
-
-        with onglets[-2]:
-            df_non = sheets.get("Non_affectées", pd.DataFrame())
-            if df_non.empty:
-                st.success("Toutes les équipes ont au moins une compétition ! ✅")
+            if equipes_ici:
+                lignes = []
+                nom_comp_lower = nom_comp.lower()
+                for tour, num in sorted(equipes_ici, key=lambda x: (x[0], x[1])):
+                    info = info_equipes.get(num, {})
+                    voeux_eq = info.get("voeux", [])
+                    # Correspondance souple (case-insensitive) pour voeu_rang
+                    voeu_rang: int | str = "Fallback"
+                    for j, v in enumerate(voeux_eq, 1):
+                        if v.lower().strip() == nom_comp_lower:
+                            voeu_rang = j
+                            break
+                    lignes.append({
+                        "Numéro équipe": num,
+                        "Nom équipe": info.get("nom", f"Équipe {num}"),
+                        "Adresse": info.get("adresse", ""),
+                        "Vœu n°": voeu_rang,
+                        "Tour": tour,
+                    })
+                df_comp = pd.DataFrame(lignes)
+                st.dataframe(df_comp, use_container_width=True)
+                sheets_export[nom_comp[:31]] = df_comp
             else:
-                st.error(f"{len(df_non)} équipe(s) sans compétition.")
-                st.dataframe(df_non, use_container_width=True)
+                st.info("Aucune équipe affectée.")
+                sheets_export[nom_comp[:31]] = pd.DataFrame()
 
-        with onglets[-1]:
-            df_resume = sheets.get("Résumé", pd.DataFrame())
-            st.dataframe(df_resume, use_container_width=True)
+    # Onglet Non affectées
+    with onglets[-2]:
+        tous_nums = {int(row["numero_equipe"]) for _, row in voeux_df.iterrows()}
+        non_aff_nums = tous_nums - tous_nums_affectes
+        if not non_aff_nums:
+            st.success("Toutes les équipes ont au moins une compétition ! ✅")
+        else:
+            st.error(f"{len(non_aff_nums)} équipe(s) sans compétition.")
+            lignes_non = []
+            for num in sorted(non_aff_nums):
+                info = info_equipes.get(num, {})
+                lignes_non.append({
+                    "Numéro équipe": num,
+                    "Nom équipe": info.get("nom", f"Équipe {num}"),
+                    "Adresse": info.get("adresse", ""),
+                })
+            df_non = pd.DataFrame(lignes_non)
+            st.dataframe(df_non, use_container_width=True)
+            sheets_export["Non_affectées"] = df_non
+
+    # Onglet Résumé global
+    with onglets[-1]:
+        lignes_resume = []
+        for nom_comp_r, paires in sorted(aff_par_comp.items()):
+            for tour, num in sorted(paires, key=lambda x: (x[0], x[1])):
+                info = info_equipes.get(num, {})
+                lignes_resume.append({
+                    "Numéro équipe": num,
+                    "Nom équipe": info.get("nom", f"Équipe {num}"),
+                    "Tour": tour,
+                    "Compétition": nom_comp_r,
+                })
+        df_resume = pd.DataFrame(lignes_resume)
+        sheets_export["Résumé"] = df_resume
+        st.dataframe(df_resume, use_container_width=True)
 
     # Export Excel
-    if sheets:
-        excel_bytes = exporter_excel(sheets)
+    if sheets_export:
+        excel_bytes = exporter_excel(sheets_export)
         st.download_button(
             label="📥 Télécharger les affectations (Excel)",
             data=excel_bytes,

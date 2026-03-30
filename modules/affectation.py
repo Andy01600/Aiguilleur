@@ -15,6 +15,8 @@ Système de priorité (sur-souscription) :
 from __future__ import annotations
 
 import math
+import re
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
@@ -561,18 +563,35 @@ def lancer_affectation(
     competitions = construire_competitions(competitions_df, saison_vacances)
 
     # Normalisation des noms de vœux vers les noms officiels des compétitions.
-    # Gère les différences de casse, d'espaces ou d'encodage légères.
+    # Gère les différences de casse, d'accents, d'espaces, de tirets, et
+    # d'encodage unicode (NFC vs NFD).
+
+    def _normaliser(s: str) -> str:
+        """Supprime accents, ponctuation et espaces superflus pour comparaison souple."""
+        s = unicodedata.normalize("NFD", s)
+        s = "".join(c for c in s if unicodedata.category(c) != "Mn")  # enlève accents
+        s = re.sub(r"[\s\-_']+", " ", s)  # espaces/tirets → espace
+        return s.strip().lower()
+
     noms_comp_lower: dict[str, str] = {
         nom.strip().lower(): nom for nom in competitions
     }
+    noms_comp_normalise: dict[str, str] = {
+        _normaliser(nom): nom for nom in competitions
+    }
+
     for equipe in equipes.values():
         voeux_corriges = []
         for v in equipe.voeux:
             if v in competitions:
+                # Correspondance exacte
                 voeux_corriges.append(v)
             elif v.strip().lower() in noms_comp_lower:
-                # Correspondance trouvée malgré différence de casse / espaces
+                # Casse / espaces différents
                 voeux_corriges.append(noms_comp_lower[v.strip().lower()])
+            elif _normaliser(v) in noms_comp_normalise:
+                # Accents ou tirets différents (ex : "Ile de France" vs "Île-de-France")
+                voeux_corriges.append(noms_comp_normalise[_normaliser(v)])
             else:
                 voeux_corriges.append(v)
         equipe.voeux = voeux_corriges
