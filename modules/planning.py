@@ -18,9 +18,13 @@ import plotly.graph_objects as go
 from utils.helpers import (
     LAMBDA_DEFAULT,
     adresse_vers_zone,
+    charger_centroides,
     charger_vacances,
+    coordonnees_code_postal,
     est_en_vacances,
     est_jour_ferie,
+    extraire_code_postal,
+    haversine,
     samedis_dans_fenetre,
 )
 
@@ -108,6 +112,55 @@ def calculer_score_total(
 # ---------------------------------------------------------------------------
 # Algorithme de sélection des dates
 # ---------------------------------------------------------------------------
+
+def _comp_la_plus_proche_par_equipe(
+    equipes_df: pd.DataFrame,
+    competitions_df: pd.DataFrame,
+) -> dict:
+    """
+    Retourne {numero_equipe: nom_competition} indiquant, pour chaque équipe,
+    la compétition géographiquement la plus proche.
+
+    Utilise les centroïdes de codes postaux (Haversine).
+    Si le fichier centroïdes est absent ou qu'une adresse est illisible,
+    l'équipe est simplement absente du dictionnaire (pas de filtrage pour elle).
+    """
+    try:
+        centroides = charger_centroides()
+    except FileNotFoundError:
+        return {}  # Pas de centroïdes → pas de filtrage géographique
+
+    # Pré-calculer les coordonnées de chaque compétition
+    coords_comps: list[tuple[str, tuple[float, float] | None]] = []
+    for _, row_comp in competitions_df.iterrows():
+        cp = extraire_code_postal(str(row_comp["adresse"]))
+        coords = coordonnees_code_postal(cp, centroides) if cp else None
+        coords_comps.append((row_comp["nom_competition"], coords))
+
+    resultat: dict = {}
+    for _, row_eq in equipes_df.iterrows():
+        cp_eq = extraire_code_postal(str(row_eq["adresse"]))
+        if not cp_eq:
+            continue
+        coords_eq = coordonnees_code_postal(cp_eq, centroides)
+        if not coords_eq:
+            continue
+
+        dist_min = float("inf")
+        comp_proche = None
+        for nom_comp, coords_comp in coords_comps:
+            if not coords_comp:
+                continue
+            dist = haversine(coords_eq[0], coords_eq[1], coords_comp[0], coords_comp[1])
+            if dist < dist_min:
+                dist_min = dist
+                comp_proche = nom_comp
+
+        if comp_proche:
+            resultat[row_eq["numero_equipe"]] = comp_proche
+
+    return resultat
+
 
 def assigner_competitions_dates_optimal(
     comps_libres: list[str],
@@ -354,6 +407,13 @@ def generer_planning(
     # Précalculer le nom de la colonne nom_equipe (optionnelle)
     col_nom_eq = "nom_equipe" if (equipes_df is not None and "nom_equipe" in equipes_df.columns) else None
 
+    # Précalculer la compétition la plus proche pour chaque équipe
+    # (filtre géographique : on n'affiche que les équipes "naturellement" attirées
+    #  par cette régionale, pas celles qui ont une régionale plus proche)
+    comp_proche_par_equipe: dict = {}
+    if equipes_df is not None and not equipes_df.empty:
+        comp_proche_par_equipe = _comp_la_plus_proche_par_equipe(equipes_df, competitions_df)
+
     detail: list[dict] = []
     score_vac_total = 0.0
     for d, nom in planning:
@@ -361,16 +421,22 @@ def generer_planning(
         _, zones = scorer_samedi(d, vacances, equipes_par_zone)
         score_vac_total += sv
 
-        # Lister les équipes dont la zone est en vacances ce jour-là
+        # Lister les équipes dont la zone est en vacances ce jour-là,
+        # en ne gardant que celles pour qui cette compétition est la plus proche.
         equipes_impactees: list[dict] = []
         if equipes_df is not None and not equipes_df.empty and zones:
             for _, row_eq in equipes_df.iterrows():
                 zone_eq = adresse_vers_zone(str(row_eq["adresse"]))
-                if zone_eq in zones:
-                    equipes_impactees.append({
-                        "numero_equipe": row_eq["numero_equipe"],
-                        "nom_equipe": str(row_eq[col_nom_eq]) if col_nom_eq else str(row_eq["numero_equipe"]),
-                    })
+                if zone_eq not in zones:
+                    continue
+                # Filtrage géographique : ignorer si une autre régionale est plus proche
+                num = row_eq["numero_equipe"]
+                if comp_proche_par_equipe and comp_proche_par_equipe.get(num) != nom:
+                    continue
+                equipes_impactees.append({
+                    "numero_equipe": num,
+                    "nom_equipe": str(row_eq[col_nom_eq]) if col_nom_eq else str(num),
+                })
 
         detail.append({
             "date": d,
