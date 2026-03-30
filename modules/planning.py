@@ -415,3 +415,31 @@ def planning_vers_dataframe(result: PlanningResult) -> pd.DataFrame:
             "Zones impactées": ", ".join(detail["zones_impactees"]) or "Aucune",
         })
     return pd.DataFrame(lignes)
+
+
+def planning_vers_fichier_competitions(
+    result: PlanningResult,
+    competitions_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Génère un DataFrame compatible avec le format d'entrée du Module 2.
+    Colonnes : nom_competition, adresse, capacite_max, date_forcee (YYYY-MM-DD).
+
+    Ce fichier peut être téléchargé et réutilisé directement comme fichier
+    compétitions dans le Module Affectation.
+    """
+    # Index du DataFrame original par nom de compétition
+    comps_index = competitions_df.set_index("nom_competition")
+
+    lignes = []
+    for detail in result.detail_par_date:
+        nom = detail["competition"]
+        adresse = comps_index.loc[nom, "adresse"] if nom in comps_index.index else ""
+        capacite = comps_index.loc[nom, "capacite_max"] if nom in comps_index.index else ""
+        lignes.append({
+            "nom_competition": nom,
+            "adresse": adresse,
+            "capacite_max": capacite,
+            "date_forcee": detail["date"].strftime("%Y-%m-%d"),
+        })
+    return pd.DataFrame(lignes)

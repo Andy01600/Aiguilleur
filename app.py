@@ -23,6 +23,7 @@ from modules.affectation import (
 from modules.planning import (
     generer_planning,
     planning_vers_dataframe,
+    planning_vers_fichier_competitions,
     planning_vers_plotly,
 )
 from utils.helpers import (
@@ -250,7 +251,7 @@ def page_planification():
             df_planning = planning_vers_dataframe(result)
             st.dataframe(df_planning, use_container_width=True)
 
-            # Export Excel
+            # Export Excel (vue lisible)
             sheets = {
                 "Planning": df_planning,
                 "Compétitions": competitions_df,
@@ -261,6 +262,16 @@ def page_planification():
                 data=excel_bytes,
                 file_name="planning_ftc_france.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+
+            # Export CSV compatible Module 2
+            df_comps_avec_dates = planning_vers_fichier_competitions(result, competitions_df)
+            st.download_button(
+                label="📥 Télécharger le fichier compétitions pour le Module 2 (CSV)",
+                data=df_comps_avec_dates.to_csv(index=False).encode("utf-8"),
+                file_name="competitions_avec_dates.csv",
+                mime="text/csv",
+                help="Ce fichier peut être utilisé directement comme entrée du Module Affectation.",
             )
 
 
