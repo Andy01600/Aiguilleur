@@ -641,6 +641,40 @@ def _afficher_resultats_affectation(
             info_equipes[num]["adresse"] = str(row["adresse"]).strip()
 
     # -----------------------------------------------------------------------
+    # Équipes n'ayant pas obtenu leur 1er vœu au Tour 1
+    # -----------------------------------------------------------------------
+    lignes_pas_voeu1: list[dict] = []
+    for num, nom_comp_aff in res_t1.nouvelles_affectations.items():
+        info = info_equipes.get(int(num), {})
+        voeux_eq = info.get("voeux", [])
+        voeu1 = voeux_eq[0] if voeux_eq else ""
+        if nom_comp_aff.lower().strip() != voeu1.lower().strip():
+            # Trouver le rang réel du vœu attribué
+            voeu_rang: int | str = "Fallback"
+            for j, v in enumerate(voeux_eq, 1):
+                if v.lower().strip() == nom_comp_aff.lower().strip():
+                    voeu_rang = j
+                    break
+            lignes_pas_voeu1.append({
+                "Numéro équipe": int(num),
+                "Nom équipe": info.get("nom", f"Équipe {num}"),
+                "Vœu n°1 souhaité": voeu1,
+                "Compétition obtenue": nom_comp_aff,
+                "Rang vœu obtenu": voeu_rang,
+            })
+
+    if lignes_pas_voeu1:
+        label_t1 = f"⚠️ {len(lignes_pas_voeu1)} équipe(s) n'ont pas obtenu leur 1er vœu au Tour 1"
+        with st.expander(label_t1, expanded=True):
+            st.dataframe(
+                pd.DataFrame(lignes_pas_voeu1).sort_values("Numéro équipe"),
+                use_container_width=True,
+                hide_index=True,
+            )
+    else:
+        st.success("✅ Toutes les équipes ont obtenu leur 1er vœu au Tour 1.")
+
+    # -----------------------------------------------------------------------
     # Diagnostic : compétitions sans affectation malgré des vœux
     # -----------------------------------------------------------------------
     noms_comps_valides = [
