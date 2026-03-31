@@ -506,6 +506,7 @@ def page_affectation():
                     st.session_state.affectation_tour_actuel = 1
                     for a in alertes_val:
                         st.warning(a)
+                    st.rerun()
                 except Exception as e:
                     st.error(f"Erreur Tour 1 : {e}")
                     return
@@ -524,6 +525,7 @@ def page_affectation():
                     )
                     st.session_state.affectation_resultats = resultats
                     st.session_state.affectation_tour_actuel = 2
+                    st.rerun()
                 except Exception as e:
                     st.error(f"Erreur Tour 2 : {e}")
                     return
@@ -541,6 +543,7 @@ def page_affectation():
                     )
                     st.session_state.affectation_resultats = resultats
                     st.session_state.affectation_tour_actuel = 3
+                    st.rerun()
                 except Exception as e:
                     st.error(f"Erreur Tour 3 : {e}")
                     return
