@@ -105,6 +105,7 @@ Magouilleuse/
 | 2026-03-31 | Template competitions_avec_dates_template.csv | Fichier modèle avec les 5 compétitions 2026-2027 et leurs dates réelles, téléchargeable depuis la page Accueil. Garantit que les noms correspondent exactement aux vœux. |
 | 2026-03-31 | Fix bug CRITIQUE : double affectation Phase A | `comp.places_restantes` décrémenté pendant la boucle d'affectation, puis relu comme indice de slice → équipes déjà affectées repassaient en Phase B et obtenaient une 2e affectation. Fix : snapshot `nb_places = comp.places_restantes` avant la boucle (affectation.py ~l.397). |
 | 2026-03-31 | Fix bug : détection doublons inopérante dans valider_voeux | `valider_voeux` appelait `_extraire_voeux` (qui déduplique) puis cherchait des doublons dans la liste déjà dédupliquée → jamais trouvés. Fix : extraction séparée `voeux_bruts` avant déduplication (affectation.py ~l.102). |
+| 2026-04-01 | Refonte critères de priorité dans cle_priorite() | L'ancien `score_alternative` mêlait les critères et l'horodatage prenait le dessus trop tôt. Nouvelle clé : (1) isolation >300 km, (2) conflit vacances, (3) distance à la compétition cible, (4) horodatage. Fonctions helpers : `_distance_min_competitions`, `_competition_la_plus_proche`, constante `SEUIL_ISOLATION_KM=300`. |
 
 ---
 
