@@ -222,6 +222,41 @@ def construire_competitions(
 # Calcul de priorité
 # ---------------------------------------------------------------------------
 
+# Seuil en km pour le critère 1 (isolation géographique)
+SEUIL_ISOLATION_KM = 300.0
+
+
+def _distance_min_competitions(
+    equipe: Equipe,
+    competitions: dict[str, Competition],
+    centroides: dict,
+) -> float:
+    """Distance minimale entre l'équipe et n'importe quelle compétition."""
+    if not equipe.adresse:
+        return 0.0
+    dists = [
+        d for comp in competitions.values()
+        if (d := distance_entre_adresses(equipe.adresse, comp.adresse, centroides)) is not None
+    ]
+    return min(dists) if dists else float("inf")
+
+
+def _competition_la_plus_proche(
+    equipe: Equipe,
+    competitions: dict[str, Competition],
+    centroides: dict,
+) -> Competition | None:
+    """Retourne la compétition géographiquement la plus proche de l'équipe."""
+    if not equipe.adresse:
+        return None
+    best_comp, best_dist = None, float("inf")
+    for comp in competitions.values():
+        d = distance_entre_adresses(equipe.adresse, comp.adresse, centroides)
+        if d is not None and d < best_dist:
+            best_dist, best_comp = d, comp
+    return best_comp
+
+
 def calculer_score_alternative(
     equipe: Equipe,
     competition_cible: Competition,
@@ -282,15 +317,42 @@ def cle_priorite(
 ) -> tuple:
     """
     Retourne une clé de tri pour l'équipe (ordre croissant = priorité décroissante).
-    On trie en ordre DÉCROISSANT de score_alternative donc on renvoie le négatif.
-    Tie-break : horodatage croissant (premier inscrit prioritaire).
+    Ordre de priorité (conforme SPECS) :
+      1. Isolation géographique (>300 km de la comp la plus proche) → prioritaire
+      2. Conflit vacances (la comp la plus proche tombe pendant les vacances) → prioritaire
+      3. Distance à la compétition cible ASC (équipe la plus proche prioritaire)
+      4. Horodatage ASC — uniquement si 1, 2 et 3 sont égaux
     """
-    score = calculer_score_alternative(
-        equipe, competition, competitions, centroides, vacances, penalite_km
-    )
-    # Score négatif → sort ascending = plus grand score en premier
+    # Critère 1 : équipe isolée si la compétition la plus proche est à >300 km
+    dist_min = _distance_min_competitions(equipe, competitions, centroides)
+    is_isolated = dist_min > SEUIL_ISOLATION_KM
+
+    # Critère 2 : la compétition la plus proche tombe pendant les vacances de l'équipe
+    has_vacation_conflict = False
+    if not is_isolated and vacances is not None and equipe.zone is not None:
+        comp_proche = _competition_la_plus_proche(equipe, competitions, centroides)
+        if (
+            comp_proche is not None
+            and comp_proche.date_competition is not None
+            and est_en_vacances(comp_proche.date_competition, equipe.zone, vacances)
+        ):
+            has_vacation_conflict = True
+
+    # Critère 3 : distance à la compétition cible
+    dist_cible = distance_entre_adresses(equipe.adresse, competition.adresse, centroides)
+    if dist_cible is None:
+        dist_cible = float("inf")
+
+    # Critère 4 : horodatage
     horodatage_key = equipe.horodatage or datetime.max
-    return (-score, horodatage_key)
+
+    # Tri ascendant : 0 = prioritaire (critères 1 et 2), puis distance, puis horodatage
+    return (
+        0 if is_isolated else 1,
+        0 if has_vacation_conflict else 1,
+        dist_cible,
+        horodatage_key,
+    )
 
 
 # ---------------------------------------------------------------------------
