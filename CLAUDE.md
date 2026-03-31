@@ -72,13 +72,17 @@ Magouilleuse/
 | Étape | Statut | Notes |
 |-------|--------|-------|
 | Spécifications | ✅ Finalisées | Voir SPECS.md — toutes les questions répondues |
-| Table département → zone vacances | ⬜ À intégrer | Dans utils/helpers.py |
-| Table centroïdes codes postaux | ⬜ À télécharger | Source : data.gouv.fr (La Poste) |
-| Structure du projet | ⬜ À créer | |
-| Module 1 — Planification | ⬜ À développer | 6 compétitions, fenêtre nov–jan, consécutifs favorisés |
-| Module 2 — Affectation | ⬜ À développer | 110 équipes, 3 tours, tie-break géographique |
-| Interface Streamlit | ⬜ À développer | Modules indépendants en page d'accueil |
-| Jeu de données test | ⬜ À préparer | Données réelles saison 2025-2026 |
+| Table département → zone vacances | ✅ Intégrée | Dans utils/helpers.py |
+| Table centroïdes codes postaux | ✅ Intégrée | utils/helpers.py via data.gouv.fr |
+| Structure du projet | ✅ Créée | Tous les modules et répertoires en place |
+| Module 1 — Planification | ✅ Développé | modules/planning.py — algorithme glouton + Plotly |
+| Module 2 — Affectation | ✅ Développé | modules/affectation.py — 3 tours, tie-break géographique |
+| Interface Streamlit | ✅ Développée | app.py — sidebar, 3 pages, upload/export |
+| Templates CSV | ✅ Créés | 4 templates téléchargeables depuis la page Accueil |
+| Normalisation noms compétitions | ✅ Implémentée | NFD + strip + lower dans lancer_affectation() |
+| Diagnostic correspondance noms | ✅ Implémenté | Expander dans Module 2, affiche repr() des noms |
+| Debug algorithme Phase A | ✅ Implémenté | Traces [DEBUG Tn] dans executer_tour(), expander dédié |
+| Jeu de données test | 🔄 En cours | Templates avec données réelles 2026-2027 créés |
 | Tests | ⬜ À écrire | |
 | Déploiement Streamlit Cloud | ⬜ Optionnel | |
 
@@ -95,6 +99,12 @@ Magouilleuse/
 | 2026-03-29 | Distance Haversine pour tie-break | Pas besoin de Google Maps, calcul offline depuis centroïdes de codes postaux |
 | 2026-03-29 | 1 compétition/samedi, consécutifs favorisés | Règle métier confirmée par le PM |
 | 2026-03-29 | Priorité tie-break : unicité vœu > proximité > horodatage Forms | Règle métier confirmée par le PM |
+| 2026-03-31 | Normalisation souple des noms de compétitions | Les CSV/Forms peuvent introduire des variantes d'encodage (NFD/NFC), espaces insécables, accents manquants. La correspondance exacte échoue silencieusement → normaliser via NFD + strip + lower avant d'associer vœux et compétitions. |
+| 2026-03-31 | Diagnostic repr() dans l'interface | Pour détecter les caractères invisibles (U+200B, U+00A0, etc.) dans les noms de compétitions, le diagnostic affiche le repr() Python de chaque nom. Activé via un expander dans le Module 2. |
+| 2026-03-31 | Debug Phase A activé par défaut | Les traces [DEBUG Tn] dans executer_tour() sont toujours émises et filtrées dans l'interface (expander "🐛 Debug algorithme"). Permet de diagnostiquer 0 demandeur sans toucher au code. |
+| 2026-03-31 | Template competitions_avec_dates_template.csv | Fichier modèle avec les 5 compétitions 2026-2027 et leurs dates réelles, téléchargeable depuis la page Accueil. Garantit que les noms correspondent exactement aux vœux. |
+| 2026-03-31 | Fix bug CRITIQUE : double affectation Phase A | `comp.places_restantes` décrémenté pendant la boucle d'affectation, puis relu comme indice de slice → équipes déjà affectées repassaient en Phase B et obtenaient une 2e affectation. Fix : snapshot `nb_places = comp.places_restantes` avant la boucle (affectation.py ~l.397). |
+| 2026-03-31 | Fix bug : détection doublons inopérante dans valider_voeux | `valider_voeux` appelait `_extraire_voeux` (qui déduplique) puis cherchait des doublons dans la liste déjà dédupliquée → jamais trouvés. Fix : extraction séparée `voeux_bruts` avant déduplication (affectation.py ~l.102). |
 
 ---
 

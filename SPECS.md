@@ -1,7 +1,7 @@
 # SPECS.md — Spécifications détaillées de Magouilleuse
 
 > Document de référence pour le développement de l'outil de planification FTC France.
-> Mis à jour le 2026-03-29.
+> Mis à jour le 2026-03-31.
 
 ---
 
@@ -15,6 +15,7 @@
 6. [Formats de données](#6-formats-de-données)
 7. [Résolution automatique adresse → zone / coordonnées](#7-résolution-automatique-adresse--zone--coordonnées)
 8. [Contraintes et règles métier](#8-contraintes-et-règles-métier)
+9. [Diagnostic et debug](#9-diagnostic-et-debug)
 
 ---
 
@@ -203,15 +204,28 @@ Phase 1.3 : Vérification
   Aucune compétition ne dépasse sa capacité
 ```
 
-**Ordre de priorité en cas de sursouscription :**
+**Critères de priorité (dans cet ordre) :**
+
+L'algorithme doit avoir une **vue globale** : pour chaque place disponible, il confronte la solidité de la candidature de chaque équipe en appliquant ces critères dans l'ordre.
+
+> **Note :** l'ordre des vœux (vœu 1, vœu 2, vœu 3) est une **indication** pour maximiser les matchs et calculer le taux de satisfaction. Il **ne rentre pas** dans les critères de priorité.
 
 ```
-1. Équipes pour qui c'est le seul vœu (nb_competitions_souhaitees = 1)
-   → Elles n'ont pas d'alternative, donc prioritaires
-2. Équipes les plus proches géographiquement de la compétition
-   → Distance calculée depuis le code postal de l'équipe et de la compétition
-3. Ordre d'inscription (date/heure de soumission du Forms)
-   → Si disponible dans le fichier Excel exporté
+1. Équipes isolées géographiquement (~300 km+ de la compétition la plus proche)
+   → Favoriser leur vœu avec la compétition la plus proche géographiquement
+     parmi leurs vœux, en favorisant les premiers vœux.
+   → Ces équipes n'ont pas d'alternative réaliste, donc prioritaires.
+
+2. Équipes dont la compétition la plus proche tombe pendant leurs vacances scolaires
+   → Favoriser leur vœu avec la compétition la plus proche géographiquement
+     hors vacances scolaires de l'équipe.
+
+3. Proximité géographique
+   → L'équipe la plus proche géographiquement de la compétition est favorisée,
+     en privilégiant les compétitions hors vacances scolaires de l'équipe.
+
+4. Ordre d'inscription (date/heure de soumission du formulaire)
+   → Départage final si les critères ci-dessus ne suffisent pas.
 ```
 
 **Tours 2 & 3 — Équipes multi-compétitions**
@@ -240,24 +254,43 @@ Taux remplissage           = nb équipes affectées / capacité max  (par compé
 ### 5.1 Structure de l'application Streamlit
 
 ```
-Page d'accueil (sélection du module)
+Page d'accueil (sélection du module — sidebar)
+├── 🏠 Accueil
+│   ├── Présentation des deux modules
+│   └── Téléchargement des 4 templates CSV :
+│       ├── equipes_2025_2026.csv
+│       ├── competitions_2026_2027.csv
+│       ├── competitions_avec_dates_template.csv  ← nouveau
+│       └── voeux_2025_2026.csv
+│
 ├── 📅 Module 1 — Planification des compétitions
 │   ├── Upload fichier compétitions (CSV/Excel)
 │   ├── Upload fichier équipes (CSV/Excel) — optionnel
+│   ├── Sélection saison vacances scolaires
 │   ├── Sélection fenêtre de dates (date_début / date_fin)
+│   ├── Slider pénalité trous (λ)
 │   ├── Bouton "Générer le planning"
+│   ├── Métriques (score vacances, samedis creux, score total)
 │   ├── Affichage calendrier interactif (Plotly)
-│   ├── Affichage score d'impact par date
-│   └── Bouton "Télécharger le planning (Excel)"
+│   ├── Tableau des dates retenues
+│   ├── Expander "Équipes potentiellement impactées par compétition"
+│   ├── Bouton "Télécharger le planning (Excel)"
+│   └── Bouton "Télécharger le fichier compétitions pour Module 2 (CSV)"
 │
 └── 🏆 Module 2 — Affectation des équipes
-    ├── Upload fichier vœux (Excel issu du Forms)
+    ├── Upload fichier vœux (Excel/CSV issu du Forms)
     ├── Upload fichier compétitions (CSV/Excel, avec dates si connues)
-    ├── Bouton "Lancer l'affectation — Tour 1"
-    ├── Affichage résultats Tour 1 (tableau + métriques)
-    ├── Bouton "Lancer Tour 2" (si des équipes veulent 2+ compétitions)
-    ├── Bouton "Lancer Tour 3" (si applicable)
-    ├── Vue résumé par compétition
+    ├── Upload fichier équipes (optionnel — pour les adresses)
+    ├── Sélection saison + slider pénalité vacances (km)
+    ├── Boutons séquentiels : Tour 1 / Tour 2 / Tour 3 / Réinitialiser
+    ├── Expander "Prévisualisation des données"
+    ├── Expander "🔍 Diagnostic correspondance noms compétitions"  ← nouveau
+    ├── Expander "🐛 Debug algorithme"  ← nouveau
+    ├── Alertes : compétitions avec 0 affectation malgré des vœux  ← nouveau
+    ├── Métriques : taux vœu n°1, taux satisfaction, total affectations
+    ├── Onglets par compétition (équipes affectées + rang du vœu)
+    ├── Onglet "Non affectées"
+    ├── Onglet "Résumé global"
     └── Bouton "Télécharger les affectations (Excel)"
 ```
 
@@ -317,6 +350,12 @@ Page d'accueil (sélection du module)
 | `date_forcee` | date | Non | Si la date est déjà fixée (format YYYY-MM-DD) |
 
 > La zone de vacances et les coordonnées GPS sont **calculées automatiquement** depuis l'adresse.
+
+**Templates disponibles :**
+- `competitions_2026_2027.csv` — compétitions sans dates (entrée Module 1)
+- `competitions_avec_dates_template.csv` — compétitions avec dates réelles 2026-2027 (entrée directe Module 2)
+
+> **Règle critique :** les noms dans ce fichier doivent correspondre **exactement** aux noms utilisés dans le fichier vœux. Utiliser le diagnostic de correspondance dans le Module 2 pour vérifier. Une correspondance souple (accents, casse, espaces) est appliquée automatiquement, mais les caractères invisibles (U+200B, U+00A0) peuvent bloquer même la correspondance normalisée.
 
 ### 6.4 Sorties Excel
 
@@ -413,13 +452,61 @@ def haversine(lat1, lon1, lat2, lon2) -> float:
 
 ### Règles de priorité en affectation (Module 2)
 
-En cas de sursouscription, dans cet ordre :
+L'algorithme a une vue globale : pour chaque place libre, il confronte toutes les candidatures. L'ordre des vœux sert d'indication (maximiser les matchs + calculer le taux de satisfaction) mais **ne constitue pas un critère de priorité**.
 
-1. Équipes avec `nb_competitions_souhaitees = 1` et ce vœu est leur unique option
-2. Équipes les plus proches géographiquement de la compétition (distance Haversine)
-3. Ordre d'inscription (horodatage du Forms)
+Critères de priorité (dans cet ordre) :
+
+1. **Isolement géographique** — Équipes dont la compétition la plus proche (toutes compétitions confondues) est à ~300 km+. Favoriser leur vœu avec la compétition la plus proche parmi leurs vœux, en favorisant les premiers vœux.
+2. **Conflit vacances scolaires** — Équipes dont la compétition la plus proche tombe pendant leurs vacances scolaires. Favoriser la compétition la plus proche hors vacances.
+3. **Proximité géographique** — Équipe la plus proche de la compétition, en privilégiant hors vacances scolaires.
+4. **Ordre d'inscription** — Horodatage de soumission du formulaire (départage final).
 
 ### Workflows indépendants
 
 - Le **Module 2 peut fonctionner sans le Module 1** : les dates peuvent être saisies manuellement dans le fichier compétitions (`date_forcee`), ou ignorées si seule l'affectation est nécessaire.
 - Le **Module 1 peut fonctionner sans le fichier équipes** (mode dégradé : minimise les conflits toutes zones confondues).
+
+---
+
+## 9. Diagnostic et debug
+
+### 9.1 Diagnostic correspondance noms compétitions
+
+Accessible via l'expander **"🔍 Diagnostic correspondance noms compétitions"** dans le Module 2, disponible dès que les deux fichiers sont chargés (avant même de lancer le Tour 1).
+
+**Ce qu'il affiche :**
+- Tableau des noms officiels (fichier compétitions) avec :
+  - `repr()` Python → révèle les caractères invisibles (U+200B, U+00A0, BOM, etc.)
+  - Nombre de vœux qui correspondent **exactement** à ce nom
+  - Version normalisée (sans accents, sans ponctuation)
+- Liste des valeurs de vœux sans correspondance exacte dans le fichier compétitions, avec la correspondance normalisée suggérée ou "❌ Aucune"
+
+**Quand l'utiliser :** si des équipes n'apparaissent pas dans les résultats d'une compétition malgré des vœux visibles dans le fichier.
+
+### 9.2 Normalisation automatique des noms
+
+Avant d'exécuter l'algorithme, `lancer_affectation()` applique une correspondance souple pour corriger les écarts courants entre vœux et compétitions :
+
+| Niveau | Ce qui est corrigé | Exemple |
+|--------|--------------------|---------|
+| Exact | Correspondance directe | pas de changement |
+| Casse + espaces | `lower()` + `strip()` | "Régionale LYON" → "Régionale Lyon" |
+| Normalisé NFD | Accents, tirets, apostrophes | "Ile de France" → "Île-de-France" |
+| Non corrigé | Caractères invisibles, encodage binaire | nécessite correction manuelle du CSV |
+
+> Si la colonne "Correspondance normalisée" dans le diagnostic indique "❌ Aucune", le vœu ne sera **pas** reconnu par l'algorithme et l'équipe sera envoyée directement en Phase B (vœux suivants ou fallback).
+
+### 9.3 Debug algorithme Phase A
+
+Chaque exécution de tour émet des traces `[DEBUG Tn]` pour chaque compétition ayant des demandeurs, visibles dans l'expander **"🐛 Debug algorithme"** des résultats.
+
+Format : `[DEBUG T1] Phase A — 'Régionale Lyon' : 43 demandeur(s) / 24 place(s) restante(s).`
+
+**Interprétation :**
+- `0 demandeur(s)` → le nom dans le dict `competitions` ne correspond à aucun vœu après normalisation → problème d'encodage dans le CSV compétitions
+- La compétition n'apparaît pas du tout → elle n'a reçu aucun premier vœu (tous les demandeurs l'ont en vœu 2 ou 3)
+- `demandeurs > places` → sur-souscription, certains seront renvoyés en Phase B
+
+### 9.4 Alerte compétitions sans affectation
+
+Après l'affichage des résultats, si une compétition a 0 équipe affectée alors qu'elle était présente dans des vœux, une alerte `⚠️` est affichée avec le nombre d'équipes concernées et un rappel de vérifier la correspondance des noms.

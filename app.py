@@ -81,13 +81,14 @@ def page_accueil():
         """
     )
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     templates = {
         "Équipes": "data/templates/equipes_2025_2026.csv",
         "Compétitions": "data/templates/competitions_2026_2027.csv",
+        "Compétitions avec dates": "data/templates/competitions_avec_dates_template.csv",
         "Vœux": "data/templates/voeux_2025_2026.csv",
     }
-    for (nom, chemin), col in zip(templates.items(), [col1, col2, col3]):
+    for (nom, chemin), col in zip(templates.items(), [col1, col2, col3, col4]):
         p = Path(chemin)
         if p.exists():
             with col:
@@ -306,6 +307,66 @@ def page_planification():
 # Page Affectation (Module 2)
 # ---------------------------------------------------------------------------
 
+def _diagnostiquer_noms(voeux_df: pd.DataFrame, competitions_df: pd.DataFrame) -> None:
+    """
+    Affiche un diagnostic de correspondance entre les noms de compétitions
+    dans le fichier compétitions et dans les vœux.
+    Révèle les caractères invisibles, différences d'encodage, etc.
+    """
+    import unicodedata as _uc
+    import re as _re
+
+    def _normaliser(s: str) -> str:
+        s = _uc.normalize("NFD", s)
+        s = "".join(c for c in s if _uc.category(c) != "Mn")
+        s = _re.sub(r"[\s\-_']+", " ", s)
+        return s.strip().lower()
+
+    noms_comps = [str(n).strip() for n in competitions_df["nom_competition"] if pd.notna(n)]
+    voeu_cols = [c for c in voeux_df.columns if c.startswith("voeu_")]
+
+    # Compter les voeux par compétition (exact match sur la valeur brute)
+    voeux_plats = []
+    for _, row in voeux_df.iterrows():
+        for c in voeu_cols:
+            v = str(row.get(c, "")).strip() if pd.notna(row.get(c)) else ""
+            if v:
+                voeux_plats.append(v)
+
+    voeux_uniques = sorted(set(voeux_plats))
+
+    # Table compétitions
+    st.markdown("**Noms de compétitions (fichier compétitions) :**")
+    rows_comp = []
+    for nom in noms_comps:
+        exact_count = sum(1 for v in voeux_plats if v == nom)
+        rows_comp.append({
+            "Nom affiché": nom,
+            "repr()": repr(nom),
+            "Nb vœux exacts": exact_count,
+            "Normalisé": _normaliser(nom),
+        })
+    st.dataframe(pd.DataFrame(rows_comp), use_container_width=True)
+
+    # Noms de compétitions présents dans les vœux mais pas dans le fichier
+    noms_comps_set = set(noms_comps)
+    noms_comps_norm = {_normaliser(n): n for n in noms_comps}
+    inconnus = []
+    for v in voeux_uniques:
+        if v not in noms_comps_set:
+            match_norm = noms_comps_norm.get(_normaliser(v))
+            inconnus.append({
+                "Vœu non reconnu": v,
+                "repr()": repr(v),
+                "Correspondance normalisée": match_norm or "❌ Aucune",
+            })
+    if inconnus:
+        st.warning(f"⚠️ {len(inconnus)} valeur(s) de vœux sans correspondance exacte dans le fichier compétitions :")
+        st.dataframe(pd.DataFrame(inconnus), use_container_width=True)
+    else:
+        st.success("✅ Tous les noms de vœux correspondent exactement à une compétition.")
+
+
 def page_affectation():
     st.title("🏆 Module 2 — Affectation des équipes")
 
@@ -419,6 +480,10 @@ def page_affectation():
             st.subheader("Compétitions")
             st.dataframe(competitions_df, use_container_width=True)
 
+        # Diagnostic correspondance noms
+        with st.expander("🔍 Diagnostic correspondance noms compétitions", expanded=False):
+            _diagnostiquer_noms(voeux_df, competitions_df)
+
         # Tour 1
         if btn_t1:
             with st.spinner("Calcul du Tour 1…"):
@@ -501,12 +566,20 @@ def _afficher_resultats_affectation(
     """Affiche les résultats de l'affectation."""
 
     # Alertes de l'algorithme
+    alertes_debug = []
     for res in resultats:
         for a in res.alertes:
-            if "⚠️" in a or "🔴" in a:
+            if a.startswith("[DEBUG"):
+                alertes_debug.append(a)
+            elif "⚠️" in a or "🔴" in a:
                 st.error(a)
             else:
                 st.warning(a)
+
+    if alertes_debug:
+        with st.expander(f"🐛 Debug algorithme ({len(alertes_debug)} entrées)", expanded=True):
+            for a in alertes_debug:
+                st.code(a)
 
     # Métriques Tour 1
     res_t1 = resultats[0]

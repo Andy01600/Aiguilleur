@@ -6,10 +6,18 @@ Algorithme en 3 tours :
   Tour 2 : affecte les 2ᵉ compétitions pour les équipes qui le souhaitent
   Tour 3 : affecte les 3ᵉ compétitions
 
-Système de priorité (sur-souscription) :
-  1. Score = distance vers la meilleure alternative viable
-     → plus l'alternative est loin, plus l'équipe a besoin de CETTE compétition
-  2. Tie-break : horodatage du formulaire (premier inscrit)
+Optimisation globale via programmation linéaire (PuLP).
+Pour chaque place libre, l'algorithme confronte la solidité de TOUTES les
+candidatures et attribue la place à l'équipe avec la plus forte raison.
+
+Critères de priorité (dans cet ordre) :
+  1. Isolement géographique (~300 km+ de la compétition la plus proche)
+  2. Conflit vacances scolaires (compétition la plus proche en vacances)
+  3. Proximité géographique
+  4. Ordre d'inscription (horodatage)
+
+L'ordre des vœux est une indication pour maximiser les matchs, pas un
+critère de priorité.
 """
 
 from __future__ import annotations
@@ -91,7 +99,14 @@ def valider_voeux(
     for _, ligne in voeux_df.iterrows():
         num = ligne.get("numero_equipe", "?")
 
-        # Récupérer tous les voeux non vides
+        # Vœux bruts (avec doublons éventuels) pour la validation
+        voeux_bruts = [
+            str(ligne[f"voeu_{i}"]).strip()
+            for i in range(1, 7)
+            if f"voeu_{i}" in ligne.index and pd.notna(ligne[f"voeu_{i}"]) and str(ligne[f"voeu_{i}"]).strip()
+        ]
+
+        # Récupérer tous les voeux non vides et dédupliqués pour le reste
         voeux = _extraire_voeux(ligne)
 
         # Vérifier le minimum de 3 voeux
@@ -101,9 +116,9 @@ def valider_voeux(
                 "minimum 3 attendus."
             )
 
-        # Vérifier les doublons
-        if len(voeux) != len(set(voeux)):
-            doublons = [v for v in voeux if voeux.count(v) > 1]
+        # Vérifier les doublons sur les vœux bruts
+        if len(voeux_bruts) != len(set(voeux_bruts)):
+            doublons = [v for v in voeux_bruts if voeux_bruts.count(v) > 1]
             alertes.append(
                 f"Équipe {num} : vœux dupliqués détectés ({', '.join(set(doublons))}) "
                 "— les doublons seront ignorés."
@@ -362,6 +377,12 @@ def executer_tour(
         if not demandeurs:
             continue
 
+        # Trace Phase A pour chaque compétition avec demandeurs
+        alertes.append(
+            f"[DEBUG T{tour_num}] Phase A — {repr(nom_comp)} : "
+            f"{len(demandeurs)} demandeur(s) / {comp.places_restantes} place(s) restante(s)."
+        )
+
         if len(demandeurs) <= comp.places_restantes:
             # Tout le monde passe
             for eq in demandeurs:
@@ -373,10 +394,11 @@ def executer_tour(
                 demandeurs,
                 key=lambda eq: cle_priorite(eq, comp, competitions, centroides, vacances, penalite_km),
             )
-            for eq in demandeurs_tries[: comp.places_restantes]:
+            nb_places = comp.places_restantes  # snapshot avant modification
+            for eq in demandeurs_tries[:nb_places]:
                 _affecter_a_competition(eq, nom_comp, competitions)
                 nouvelles_affectations[eq.numero] = nom_comp
-            for eq in demandeurs_tries[comp.places_restantes:]:
+            for eq in demandeurs_tries[nb_places:]:
                 non_affectes_phase_a.append(eq)
 
     # -----------------------------------------------------------------------
@@ -567,9 +589,12 @@ def lancer_affectation(
     # d'encodage unicode (NFC vs NFD).
 
     def _normaliser(s: str) -> str:
-        """Supprime accents, ponctuation et espaces superflus pour comparaison souple."""
+        """Supprime accents, caractères invisibles, ponctuation et espaces superflus."""
+        # Supprimer les caractères invisibles/format (U+200B, U+FEFF, U+00AD, etc.)
+        s = "".join(c for c in s if unicodedata.category(c) not in ("Cf", "Cc", "Zl", "Zp"))
         s = unicodedata.normalize("NFD", s)
         s = "".join(c for c in s if unicodedata.category(c) != "Mn")  # enlève accents
+        s = s.replace("\u00a0", " ")  # espace insécable → espace normal
         s = re.sub(r"[\s\-_']+", " ", s)  # espaces/tirets → espace
         return s.strip().lower()
 
