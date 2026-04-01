@@ -100,20 +100,6 @@ def page_accueil():
                         mime="text/csv",
                     )
 
-    st.divider()
-    st.markdown(
-        """
-        ### Format des fichiers
-
-        **Équipes** (`CSV/Excel`) : `numero_equipe`, `nom_equipe`, `adresse`
-
-        **Compétitions** (`CSV/Excel`) : `nom_competition`, `adresse`, `capacite_max`,
-        `date_forcee` *(optionnel, format YYYY-MM-DD)*
-
-        **Vœux** (`CSV/Excel`) : `numero_equipe`, `horodatage` *(optionnel)*,
-        `voeu_1` à `voeu_6` *(minimum 3 remplis)*, `nb_competitions_souhaitees`
-        """
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -296,7 +282,7 @@ def page_planification():
             df_comps_avec_dates = planning_vers_fichier_competitions(result, competitions_df)
             st.download_button(
                 label="📥 Télécharger le fichier compétitions pour le Module 2 (CSV)",
-                data=df_comps_avec_dates.to_csv(index=False).encode("utf-8"),
+                data=df_comps_avec_dates.to_csv(index=False, sep=";").encode("utf-8"),
                 file_name="competitions_avec_dates.csv",
                 mime="text/csv",
                 help="Ce fichier peut être utilisé directement comme entrée du Module Affectation.",

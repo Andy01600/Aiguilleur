@@ -235,13 +235,9 @@ def lire_fichier(
         nom = str(source).lower()
 
     if nom.endswith(".csv"):
-        # Forcer la virgule comme séparateur (standard CSV).
-        # sep=None + engine="python" peut se tromper quand les adresses
-        # contiennent des virgules, même entre guillemets.
-        try:
-            df = pd.read_csv(source, encoding="utf-8", sep=",")
-        except Exception:
-            df = pd.read_csv(source, encoding="utf-8", sep=None, engine="python")
+        # Forcer le point-virgule comme séparateur.
+        # Les adresses contiennent des virgules : le point-virgule évite toute ambiguïté.
+        df = pd.read_csv(source, encoding="utf-8", sep=";")
     elif nom.endswith((".xlsx", ".xls")):
         df = pd.read_excel(source)
     else:

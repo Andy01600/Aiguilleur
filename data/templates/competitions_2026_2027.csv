@@ -1,7 +1,7 @@
-nom_competition,adresse,capacite_max
-Régionale Île-de-France,"15 rue du Président Wilson, 92300 Levallois-Perret",15
-Régionale Lyon,"9 Rue Victor Hugo, 69250 Neuville-sur-Saône",24
-Régionale Clermont,"32 Rue du Clos Four, 63100 Clermont-Ferrand",17
-Régionale Valence,"91 Rue Montplaisir, 26000 Valence",20
-Régionale Pays de la Loire,"Vestibule Accès Nord, Bd de Stalingrad, 44000 Nantes",20
-Régionale Savoie,"Rue Pierre Rosset, 74460 Marnaz",20
+nom_competition;adresse;capacite_max
+Régionale Île-de-France;15 rue du Président Wilson, 92300 Levallois-Perret;15
+Régionale Lyon;9 Rue Victor Hugo, 69250 Neuville-sur-Saône;24
+Régionale Clermont;32 Rue du Clos Four, 63100 Clermont-Ferrand;17
+Régionale Valence;91 Rue Montplaisir, 26000 Valence;20
+Régionale Pays de la Loire;Vestibule Accès Nord, Bd de Stalingrad, 44000 Nantes;20
+Régionale Savoie;Rue Pierre Rosset, 74460 Marnaz;20

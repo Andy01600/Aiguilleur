@@ -1,7 +1,7 @@
-nom_competition,adresse,capacite_max,date_forcee
-Régionale Clermont,"32 Rue du Clos Four, 63100 Clermont-Ferrand",17,2026-01-24
-Régionale Valence,"91 Rue Montplaisir, 26000 Valence",20,2026-01-17
-Régionale Savoie,"Rue Pierre Rosset, 74460 Marnaz",20,2026-01-31
-Régionale Pays de la Loire,"Vestibule Accès Nord, Bd de Stalingrad, 44000 Nantes",20,2026-02-07
-Régionale Lyon,"9 Rue Victor Hugo, 69250 Neuville-sur-Saône",24,2026-02-28
-Régionale Île-de-France,"15 rue du Président Wilson, 92300 Levallois-Perret",15,2026-02-14
+nom_competition;adresse;capacite_max;date_forcee
+Régionale Clermont;32 Rue du Clos Four, 63100 Clermont-Ferrand;17;2026-01-24
+Régionale Valence;91 Rue Montplaisir, 26000 Valence;20;2026-01-17
+Régionale Savoie;Rue Pierre Rosset, 74460 Marnaz;20;2026-01-31
+Régionale Pays de la Loire;Vestibule Accès Nord, Bd de Stalingrad, 44000 Nantes;20;2026-02-07
+Régionale Lyon;9 Rue Victor Hugo, 69250 Neuville-sur-Saône;24;2026-02-28
+Régionale Île-de-France;15 rue du Président Wilson, 92300 Levallois-Perret;15;2026-02-14
