@@ -23,7 +23,9 @@ from modules.planning import (
 from utils.helpers import (
     PENALITE_VACANCES_KM,
     ZONE_PAR_DEPARTEMENT,
+    charger_centroides,
     charger_vacances,
+    distance_entre_adresses,
     exporter_excel,
     lire_fichier,
     samedis_dans_fenetre,
@@ -573,11 +575,15 @@ def page_affectation():
             use_container_width=True,
             disabled=st.session_state.affectation_tour_actuel < 1,
         )
+        _t3_pas_necessaire = (
+            st.session_state.affectation_tour_actuel >= 2
+            and not st.session_state.affectation_resultats[-1].non_affectees
+        )
         btn_t3 = col_t3.button(
             "Tour 3",
             type="secondary",
             use_container_width=True,
-            disabled=st.session_state.affectation_tour_actuel < 2,
+            disabled=st.session_state.affectation_tour_actuel < 2 or _t3_pas_necessaire,
         )
 
         btn_reset = st.button("🔄 Réinitialiser", use_container_width=True)
@@ -727,7 +733,7 @@ def _afficher_resultats_affectation(
                 st.warning(a)
 
     if alertes_debug:
-        with st.expander(f"🐛 Debug algorithme ({len(alertes_debug)} entrées)", expanded=True):
+        with st.expander(f"🐛 Debug algorithme ({len(alertes_debug)} entrées)", expanded=False):
             for a in alertes_debug:
                 st.code(a)
 
@@ -820,6 +826,48 @@ def _afficher_resultats_affectation(
             )
     else:
         st.success("✅ Toutes les équipes ont obtenu leur 1er vœu au Tour 1.")
+
+    # -----------------------------------------------------------------------
+    # Top 10 équipes les plus loin de leur compétition d'affectation (Tour 1)
+    # -----------------------------------------------------------------------
+    try:
+        centroides = charger_centroides()
+        # Table adresse par compétition
+        adr_par_comp: dict[str, str] = {
+            str(row["nom_competition"]).strip(): str(row["adresse"]).strip()
+            for _, row in competitions_df.iterrows()
+            if pd.notna(row.get("nom_competition")) and pd.notna(row.get("adresse"))
+        }
+        lignes_dist: list[dict] = []
+        for num, nom_comp_aff in res_t1.nouvelles_affectations.items():
+            info = info_equipes.get(int(num), {})
+            adresse_equipe = info.get("adresse", "")
+            adresse_comp = adr_par_comp.get(str(nom_comp_aff).strip(), "")
+            if adresse_equipe and adresse_comp:
+                dist = distance_entre_adresses(adresse_equipe, adresse_comp, centroides)
+            else:
+                dist = None
+            lignes_dist.append({
+                "Numéro équipe": int(num),
+                "Nom équipe": info.get("nom", f"Équipe {num}"),
+                "Compétition obtenue": nom_comp_aff,
+                "Distance (km)": round(dist) if dist is not None else None,
+            })
+        df_dist = (
+            pd.DataFrame(lignes_dist)
+            .dropna(subset=["Distance (km)"])
+            .sort_values("Distance (km)", ascending=False)
+            .head(10)
+            .reset_index(drop=True)
+        )
+        if not df_dist.empty:
+            with st.expander(
+                f"📍 Top 10 équipes les plus éloignées de leur compétition (Tour 1)",
+                expanded=False,
+            ):
+                st.dataframe(df_dist, use_container_width=True, hide_index=True)
+    except FileNotFoundError:
+        pass  # centroides non disponibles, on saute silencieusement
 
     # -----------------------------------------------------------------------
     # Diagnostic : compétitions sans affectation malgré des vœux
