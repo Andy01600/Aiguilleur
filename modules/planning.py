@@ -547,7 +547,7 @@ def planning_vers_dataframe(result: PlanningResult) -> pd.DataFrame:
             "Date": detail["date"].strftime("%d/%m/%Y"),
             "Jour": detail["date"].strftime("%A").capitalize(),
             "Compétition": detail["competition"],
-            "Score impact vacances": detail["score_vacances"],
+            "Équipes impactées": len(detail.get("equipes_impactees", [])),
             "Zones impactées": ", ".join(detail["zones_impactees"]) or "Aucune",
         })
     return pd.DataFrame(lignes)
