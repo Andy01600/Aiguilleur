@@ -22,6 +22,7 @@ from modules.planning import (
 )
 from utils.helpers import (
     PENALITE_VACANCES_KM,
+    charger_vacances,
     exporter_excel,
     lire_fichier,
     samedis_dans_fenetre,
@@ -104,6 +105,93 @@ def page_accueil():
 # ---------------------------------------------------------------------------
 # Page Planification (Module 1)
 # ---------------------------------------------------------------------------
+
+def _afficher_reference_vacances(saison: str):
+    """Expander avec carte des zones et tableau des dates de vacances."""
+    try:
+        vacances = charger_vacances(saison)
+    except FileNotFoundError:
+        return
+
+    MOIS_FR = ["", "jan.", "fév.", "mars", "avr.", "mai", "juin",
+               "juil.", "août", "sep.", "oct.", "nov.", "déc."]
+
+    def fmt_periode(debut, fin):
+        return f"Du {debut.day} {MOIS_FR[debut.month]} au {fin.day} {MOIS_FR[fin.month]} {fin.year}"
+
+    ACADEMIES = {
+        "A": {
+            "color": "#636e72",
+            "villes": [
+                ("Lyon", 45.75, 4.85), ("Dijon", 47.32, 5.04), ("Grenoble", 45.19, 5.72),
+                ("Clermont-Ferrand", 45.78, 3.09), ("Bordeaux", 44.84, -0.58),
+                ("Limoges", 45.83, 1.26), ("Poitiers", 46.58, 0.34), ("Besançon", 47.24, 6.02),
+            ],
+        },
+        "B": {
+            "color": "#2c3e50",
+            "villes": [
+                ("Marseille", 43.30, 5.37), ("Amiens", 49.89, 2.30), ("Lille", 50.63, 3.07),
+                ("Nancy", 48.69, 6.18), ("Nantes", 47.22, -1.55), ("Nice", 43.71, 7.26),
+                ("Rouen", 49.44, 1.09), ("Orléans", 47.90, 1.91), ("Reims", 49.26, 4.03),
+                ("Rennes", 48.11, -1.68), ("Strasbourg", 48.58, 7.75),
+            ],
+        },
+        "C": {
+            "color": "#e67e22",
+            "villes": [
+                ("Créteil", 48.79, 2.46), ("Montpellier", 43.61, 3.88),
+                ("Paris", 48.85, 2.35), ("Toulouse", 43.60, 1.44), ("Versailles", 48.80, 2.13),
+            ],
+        },
+    }
+
+    with st.expander("📚 Référence — Zones & vacances scolaires", expanded=False):
+        import plotly.graph_objects as go
+
+        fig = go.Figure()
+        for zone, info in ACADEMIES.items():
+            lats = [v[1] for v in info["villes"]]
+            lons = [v[2] for v in info["villes"]]
+            names = [v[0] for v in info["villes"]]
+            fig.add_trace(go.Scattergeo(
+                lat=lats, lon=lons,
+                text=[f"Zone {zone} — {n}" for n in names],
+                mode="markers+text",
+                marker=dict(size=14, color=info["color"], opacity=0.9),
+                textposition="top center",
+                textfont=dict(size=8, color=info["color"]),
+                name=f"Zone {zone}",
+                hovertemplate="%{text}<extra></extra>",
+            ))
+        fig.update_layout(
+            geo=dict(
+                scope="europe",
+                resolution=50,
+                showland=True, landcolor="#f8f9fa",
+                showocean=True, oceancolor="#eaf4fb",
+                showcountries=True, countrycolor="#ccc",
+                showcoastlines=True, coastlinecolor="#aaa",
+                center=dict(lat=46.5, lon=2.5),
+                projection_scale=8,
+            ),
+            margin=dict(t=0, b=0, l=0, r=0),
+            height=320,
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Tableau des dates de vacances
+        NOMS_PERIODES = ["Toussaint", "Noël", "Hiver", "Printemps"]
+        lignes = []
+        nb_periodes = max(len(v) for v in vacances.values())
+        for i in range(nb_periodes):
+            row = {"Période": NOMS_PERIODES[i] if i < len(NOMS_PERIODES) else f"Période {i + 1}"}
+            for zone in ["A", "B", "C"]:
+                periodes = vacances.get(zone, [])
+                row[f"Zone {zone}"] = fmt_periode(*periodes[i]) if i < len(periodes) else "—"
+            lignes.append(row)
+        st.dataframe(pd.DataFrame(lignes), use_container_width=True, hide_index=True)
 
 def _afficher_calendrier_planning(result, competitions_df):
     """Affiche le calendrier des compétitions avec coloration par impact vacances."""
@@ -216,6 +304,7 @@ def page_planification():
             ["2026_2027", "2025_2026"],
             help="Sélectionnez la saison pour le calendrier des vacances.",
         )
+        _afficher_reference_vacances(saison)
 
         col_d1, col_d2 = st.columns(2)
         with col_d1:
