@@ -118,9 +118,9 @@ def _afficher_calendrier_planning(result, competitions_df):
         sv = det["score_vacances"]
         cap = int(comps_index.loc[nom, "capacite_max"]) if nom in comps_index.index else 24
         nb_imp = len(det.get("equipes_impactees", []))
-        if sv == 0:
+        if nb_imp == 0:
             color, bg, tc = "#27ae60", "#d5f5e3", "#1a5c33"
-        elif sv < cap / 2:
+        elif nb_imp < cap / 2:
             color, bg, tc = "#e67e22", "#fde8d0", "#7d3c00"
         else:
             color, bg, tc = "#e74c3c", "#fadbd8", "#7b241c"
