@@ -19,13 +19,12 @@ from modules.planning import (
     generer_planning,
     planning_vers_dataframe,
     planning_vers_fichier_competitions,
-    planning_vers_plotly,
 )
 from utils.helpers import (
     PENALITE_VACANCES_KM,
-    charger_vacances,
     exporter_excel,
     lire_fichier,
+    samedis_dans_fenetre,
 )
 
 # ---------------------------------------------------------------------------
@@ -105,6 +104,93 @@ def page_accueil():
 # ---------------------------------------------------------------------------
 # Page Planification (Module 1)
 # ---------------------------------------------------------------------------
+
+def _afficher_calendrier_planning(result, competitions_df):
+    """Affiche le calendrier des compétitions avec coloration par impact vacances."""
+    if not result.dates:
+        return
+
+    comps_index = competitions_df.set_index("nom_competition")
+
+    date_to_info = {}
+    for det in result.detail_par_date:
+        nom = det["competition"]
+        sv = det["score_vacances"]
+        cap = int(comps_index.loc[nom, "capacite_max"]) if nom in comps_index.index else 24
+        nb_imp = len(det.get("equipes_impactees", []))
+        if sv == 0:
+            color, bg, tc = "#27ae60", "#d5f5e3", "#1a5c33"
+        elif sv < cap / 2:
+            color, bg, tc = "#e67e22", "#fde8d0", "#7d3c00"
+        else:
+            color, bg, tc = "#e74c3c", "#fadbd8", "#7b241c"
+        date_to_info[det["date"]] = (nom, color, bg, tc, nb_imp)
+
+    all_sats = samedis_dans_fenetre(min(result.dates), max(result.dates))
+
+    from collections import defaultdict
+    mois_to_sats = defaultdict(list)
+    for s in all_sats:
+        mois_to_sats[(s.year, s.month)].append(s)
+
+    MOIS_FR = ["", "Jan.", "Fév.", "Mar.", "Avr.", "Mai", "Juin",
+               "Juil.", "Août", "Sep.", "Oct.", "Nov.", "Déc."]
+
+    html = ['<div style="font-family:sans-serif;padding:4px 0;">']
+    for (annee, mois), sats in sorted(mois_to_sats.items()):
+        html.append(
+            f'<div style="margin-bottom:16px;">'
+            f'<span style="font-size:13px;font-weight:600;color:#555;'
+            f'text-transform:uppercase;letter-spacing:1px;">{MOIS_FR[mois]} {annee}</span>'
+            f'<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">'
+        )
+        for s in sats:
+            date_fr = s.strftime("%d/%m")
+            if s in date_to_info:
+                nom, color, bg, tc, nb_imp = date_to_info[s]
+                label = nom.replace("Régionale ", "")
+                imp_str = (
+                    f'<span style="font-size:11px;opacity:0.75;">⚠️ {nb_imp} éq. impactée(s)</span>'
+                    if nb_imp > 0 else
+                    '<span style="font-size:11px;opacity:0.75;">✅ Aucune équipe impactée</span>'
+                )
+                html.append(
+                    f'<div style="background:{bg};border-left:4px solid {color};'
+                    f'border-radius:6px;padding:8px 12px;color:{tc};'
+                    f'font-size:13px;min-width:130px;max-width:200px;">'
+                    f'<strong>{date_fr}</strong><br>'
+                    f'<span style="font-size:12px;">{label}</span><br>'
+                    f'{imp_str}</div>'
+                )
+            else:
+                html.append(
+                    f'<div style="background:#ecf0f1;border-left:4px solid #bdc3c7;'
+                    f'border-radius:6px;padding:8px 12px;color:#95a5a6;'
+                    f'font-size:13px;min-width:80px;">'
+                    f'<strong>{date_fr}</strong><br>'
+                    f'<span style="font-size:12px;font-style:italic;">Creux</span></div>'
+                )
+        html.append('</div></div>')
+
+    html.append(
+        '<div style="display:flex;gap:20px;margin-top:4px;font-size:12px;'
+        'color:#555;flex-wrap:wrap;">'
+        '<span><span style="display:inline-block;width:10px;height:10px;'
+        'background:#d5f5e3;border-left:3px solid #27ae60;margin-right:5px;'
+        'vertical-align:middle;"></span>Aucun impact</span>'
+        '<span><span style="display:inline-block;width:10px;height:10px;'
+        'background:#fde8d0;border-left:3px solid #e67e22;margin-right:5px;'
+        'vertical-align:middle;"></span>Impact &lt; ½ capacité</span>'
+        '<span><span style="display:inline-block;width:10px;height:10px;'
+        'background:#fadbd8;border-left:3px solid #e74c3c;margin-right:5px;'
+        'vertical-align:middle;"></span>Impact ≥ ½ capacité</span>'
+        '<span><span style="display:inline-block;width:10px;height:10px;'
+        'background:#ecf0f1;border-left:3px solid #bdc3c7;margin-right:5px;'
+        'vertical-align:middle;"></span>Samedi creux</span>'
+        '</div></div>'
+    )
+    st.markdown("".join(html), unsafe_allow_html=True)
+
 
 def page_planification():
     st.title("📅 Module 1 — Planification des compétitions")
@@ -203,33 +289,30 @@ def page_planification():
                     st.error(f"Erreur lors de la génération : {e}")
                     return
 
-            # Alertes
-            for alerte in result.alertes:
+            # Alertes (hors "Zone non déterminée" regroupées en expander)
+            alertes_zone = [a for a in result.alertes if "Zone non déterminée" in a]
+            autres_alertes = [a for a in result.alertes if "Zone non déterminée" not in a]
+            for alerte in autres_alertes:
                 if alerte.startswith("⚠️") or alerte.startswith("🔴"):
                     st.error(alerte)
                 elif alerte.startswith("🟠"):
                     st.warning(alerte)
                 else:
                     st.info(alerte)
+            if alertes_zone:
+                with st.expander(f"⚠️ {len(alertes_zone)} adresse(s) sans zone détectée", expanded=False):
+                    for a in alertes_zone:
+                        st.caption(a)
 
             if not result.dates:
                 return
 
-            # Métriques
-            col_m1, col_m2, col_m3 = st.columns(3)
-            col_m1.metric("Score vacances", f"{result.score_vacances:.0f}")
-            col_m2.metric("Samedis creux", result.nb_trous)
-            col_m3.metric("Score total", f"{result.score_total:.2f}")
-
-            # Graphique Plotly
-            try:
-                vacances = charger_vacances(saison)
-            except FileNotFoundError:
-                vacances = None
-            fig = planning_vers_plotly(result, vacances)
-            st.plotly_chart(fig, use_container_width=True)
+            # Calendrier
+            st.subheader("Calendrier")
+            _afficher_calendrier_planning(result, competitions_df)
 
             # Tableau des résultats
+            st.subheader("Détail")
             df_planning = planning_vers_dataframe(result)
             st.dataframe(df_planning, use_container_width=True)
 

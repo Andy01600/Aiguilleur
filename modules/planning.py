@@ -449,14 +449,6 @@ def generer_planning(
     nb_trous = calculer_nb_trous([d for d, _ in planning])
     score_tot = score_vac_total + lambda_ * nb_trous
 
-    # Alertes de qualité
-    if score_vac_total > 0:
-        alertes.append(
-            f"🟠 Score d'impact vacances : {score_vac_total:.0f} "
-            f"({'équipes' if equipes_par_zone else 'zones'} potentiellement impactées)."
-        )
-    if nb_trous > 0:
-        alertes.append(f"🟠 {nb_trous} samedi(s) creux entre les compétitions.")
 
     return PlanningResult(
         competitions=[nom for _, nom in planning],
