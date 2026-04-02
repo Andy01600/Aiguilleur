@@ -5,6 +5,8 @@ Fonctions utilitaires partagées entre les modules Magouilleuse.
 import json
 import re
 import functools
+import urllib.request
+from collections.abc import Callable
 from datetime import date
 from io import BytesIO
 from math import asin, cos, radians, sin, sqrt
@@ -175,6 +177,147 @@ def distance_entre_adresses(
     if coords1 is None or coords2 is None:
         return None
     return haversine(coords1[0], coords1[1], coords2[0], coords2[1])
+
+
+# Type alias pour les fonctions de distance interchangeables
+DistanceFn = Callable[[str, str, dict[str, tuple[float, float]]], float | None]
+
+
+def distance_route_estimee(
+    adresse1: str,
+    adresse2: str,
+    centroides: dict[str, tuple[float, float]],
+) -> float | None:
+    """Haversine × 1.3 — approximation de la distance routière."""
+    d = distance_entre_adresses(adresse1, adresse2, centroides)
+    return d * 1.3 if d is not None else None
+
+
+# ---------------------------------------------------------------------------
+# OSRM — distances routières réelles
+# ---------------------------------------------------------------------------
+
+def _appel_osrm_route(lat1: float, lon1: float, lat2: float, lon2: float) -> float | None:
+    """Appel individuel OSRM route. Retourne la distance en km ou None."""
+    url = (
+        f"http://router.project-osrm.org/route/v1/driving/"
+        f"{lon1},{lat1};{lon2},{lat2}?overview=false"
+    )
+    try:
+        with urllib.request.urlopen(url, timeout=10) as r:
+            data = json.loads(r.read())
+        if data.get("code") == "Ok" and data.get("routes"):
+            return data["routes"][0]["distance"] / 1000.0
+    except Exception:
+        pass
+    return None
+
+
+def _construire_matrice_osrm(
+    coords: list[tuple[float, float]],
+    indices_sources: list[int],
+    indices_destinations: list[int],
+) -> list[list[float | None]] | None:
+    """
+    Appel OSRM Table API pour une matrice rectangulaire.
+    coords : liste de (lat, lon) pour tous les points.
+    Retourne matrice [sources × destinations] en km, ou None si échec.
+    """
+    if not coords or not indices_sources or not indices_destinations:
+        return None
+    coords_str = ";".join(f"{lon},{lat}" for lat, lon in coords)
+    sources_str = ";".join(str(i) for i in indices_sources)
+    destinations_str = ";".join(str(i) for i in indices_destinations)
+    url = (
+        f"http://router.project-osrm.org/table/v1/driving/{coords_str}"
+        f"?sources={sources_str}&destinations={destinations_str}&annotations=distance"
+    )
+    try:
+        with urllib.request.urlopen(url, timeout=30) as r:
+            data = json.loads(r.read())
+        if data.get("code") != "Ok":
+            return None
+        raw = data["distances"]
+        return [
+            [cell / 1000.0 if cell is not None else None for cell in row]
+            for row in raw
+        ]
+    except Exception:
+        return None
+
+
+def creer_fn_distance_osrm(
+    centroides: dict[str, tuple[float, float]],
+    adresses_equipes: list[str] | None = None,
+    adresses_competitions: list[str] | None = None,
+) -> DistanceFn:
+    """
+    Crée une fonction distance utilisant OSRM (Table API + fallback route).
+
+    Si adresses_equipes et adresses_competitions sont fournis, tente d'abord
+    un appel matriciel (Table API) pour pré-calculer toutes les distances.
+    Sinon, ou en cas d'échec, fait des appels individuels avec cache.
+    """
+    cache: dict[tuple[str, str], float | None] = {}
+
+    # Pré-calcul matriciel si les adresses sont connues
+    if adresses_equipes and adresses_competitions:
+        # Extraire les CP uniques
+        cps_equipes = []
+        for adr in adresses_equipes:
+            cp = extraire_code_postal(adr)
+            if cp and coordonnees_code_postal(cp, centroides):
+                cps_equipes.append(cp)
+        cps_comps = []
+        for adr in adresses_competitions:
+            cp = extraire_code_postal(adr)
+            if cp and coordonnees_code_postal(cp, centroides):
+                cps_comps.append(cp)
+
+        cps_equipes = list(dict.fromkeys(cps_equipes))  # déduplique, conserve l'ordre
+        cps_comps = list(dict.fromkeys(cps_comps))
+
+        if cps_equipes and cps_comps:
+            # Construire la liste de coordonnées : d'abord équipes, puis compétitions
+            tous_cps = cps_equipes + cps_comps
+            coords = [coordonnees_code_postal(cp, centroides) for cp in tous_cps]
+            idx_src = list(range(len(cps_equipes)))
+            idx_dst = list(range(len(cps_equipes), len(tous_cps)))
+
+            matrice = _construire_matrice_osrm(coords, idx_src, idx_dst)
+            if matrice is not None:
+                for i, cp_eq in enumerate(cps_equipes):
+                    for j, cp_co in enumerate(cps_comps):
+                        cache[(cp_eq, cp_co)] = matrice[i][j]
+                        cache[(cp_co, cp_eq)] = matrice[i][j]
+
+    def fn_distance(adresse1: str, adresse2: str, centroides_: dict) -> float | None:
+        cp1 = extraire_code_postal(adresse1)
+        cp2 = extraire_code_postal(adresse2)
+        if cp1 is None or cp2 is None:
+            return None
+
+        cle = (cp1, cp2)
+        if cle in cache:
+            return cache[cle]
+
+        # Appel individuel OSRM
+        c1 = coordonnees_code_postal(cp1, centroides_)
+        c2 = coordonnees_code_postal(cp2, centroides_)
+        if c1 is None or c2 is None:
+            return None
+
+        dist = _appel_osrm_route(c1[0], c1[1], c2[0], c2[1])
+        if dist is None:
+            # Fallback : route estimée (×1.3)
+            dist_hav = haversine(c1[0], c1[1], c2[0], c2[1])
+            dist = dist_hav * 1.3
+
+        cache[cle] = dist
+        cache[(cp2, cp1)] = dist
+        return dist
+
+    return fn_distance
 
 
 # ---------------------------------------------------------------------------

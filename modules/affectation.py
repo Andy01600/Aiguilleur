@@ -31,11 +31,14 @@ from datetime import date, datetime
 import pandas as pd
 
 from utils.helpers import (
+    DistanceFn,
     PENALITE_VACANCES_KM,
     adresse_vers_zone,
     charger_centroides,
     charger_vacances,
+    creer_fn_distance_osrm,
     distance_entre_adresses,
+    distance_route_estimee,
     est_en_vacances,
     extraire_code_postal,
 )
@@ -230,13 +233,14 @@ def _distance_min_competitions(
     equipe: Equipe,
     competitions: dict[str, Competition],
     centroides: dict,
+    fn_distance: DistanceFn = distance_entre_adresses,
 ) -> float:
     """Distance minimale entre l'équipe et n'importe quelle compétition."""
     if not equipe.adresse:
         return 0.0
     dists = [
         d for comp in competitions.values()
-        if (d := distance_entre_adresses(equipe.adresse, comp.adresse, centroides)) is not None
+        if (d := fn_distance(equipe.adresse, comp.adresse, centroides)) is not None
     ]
     return min(dists) if dists else float("inf")
 
@@ -245,13 +249,14 @@ def _competition_la_plus_proche(
     equipe: Equipe,
     competitions: dict[str, Competition],
     centroides: dict,
+    fn_distance: DistanceFn = distance_entre_adresses,
 ) -> Competition | None:
     """Retourne la compétition géographiquement la plus proche de l'équipe."""
     if not equipe.adresse:
         return None
     best_comp, best_dist = None, float("inf")
     for comp in competitions.values():
-        d = distance_entre_adresses(equipe.adresse, comp.adresse, centroides)
+        d = fn_distance(equipe.adresse, comp.adresse, centroides)
         if d is not None and d < best_dist:
             best_dist, best_comp = d, comp
     return best_comp
@@ -264,6 +269,7 @@ def calculer_score_alternative(
     centroides: dict,
     vacances: dict | None,
     penalite_km: float = PENALITE_VACANCES_KM,
+    fn_distance: DistanceFn = distance_entre_adresses,
 ) -> float:
     """
     Calcule le score d'alternative de l'équipe pour la compétition cible.
@@ -288,7 +294,7 @@ def calculer_score_alternative(
     distances_effectives = []
     for nom_alt in alternatives:
         comp_alt = competitions[nom_alt]
-        dist = distance_entre_adresses(equipe.adresse, comp_alt.adresse, centroides)
+        dist = fn_distance(equipe.adresse, comp_alt.adresse, centroides)
         if dist is None:
             dist = float("inf")
 
@@ -314,6 +320,7 @@ def cle_priorite(
     centroides: dict,
     vacances: dict | None,
     penalite_km: float = PENALITE_VACANCES_KM,
+    fn_distance: DistanceFn = distance_entre_adresses,
 ) -> tuple:
     """
     Retourne une clé de tri pour l'équipe (ordre croissant = priorité décroissante).
@@ -324,13 +331,13 @@ def cle_priorite(
       4. Horodatage ASC — uniquement si 1, 2 et 3 sont égaux
     """
     # Critère 1 : équipe isolée si la compétition la plus proche est à >300 km
-    dist_min = _distance_min_competitions(equipe, competitions, centroides)
+    dist_min = _distance_min_competitions(equipe, competitions, centroides, fn_distance)
     is_isolated = dist_min > SEUIL_ISOLATION_KM
 
     # Critère 2 : la compétition la plus proche tombe pendant les vacances de l'équipe
     has_vacation_conflict = False
     if not is_isolated and vacances is not None and equipe.zone is not None:
-        comp_proche = _competition_la_plus_proche(equipe, competitions, centroides)
+        comp_proche = _competition_la_plus_proche(equipe, competitions, centroides, fn_distance)
         if (
             comp_proche is not None
             and comp_proche.date_competition is not None
@@ -339,7 +346,7 @@ def cle_priorite(
             has_vacation_conflict = True
 
     # Critère 3 : distance à la compétition cible
-    dist_cible = distance_entre_adresses(equipe.adresse, competition.adresse, centroides)
+    dist_cible = fn_distance(equipe.adresse, competition.adresse, centroides)
     if dist_cible is None:
         dist_cible = float("inf")
 
@@ -377,6 +384,7 @@ def executer_tour(
     centroides: dict,
     vacances: dict | None,
     penalite_km: float = PENALITE_VACANCES_KM,
+    fn_distance: DistanceFn = distance_entre_adresses,
 ) -> AffectationResult:
     """
     Exécute un tour d'affectation.
@@ -454,7 +462,7 @@ def executer_tour(
             # Sur-souscription : trier par priorité
             demandeurs_tries = sorted(
                 demandeurs,
-                key=lambda eq: cle_priorite(eq, comp, competitions, centroides, vacances, penalite_km),
+                key=lambda eq: cle_priorite(eq, comp, competitions, centroides, vacances, penalite_km, fn_distance),
             )
             nb_places = comp.places_restantes  # snapshot avant modification
             for eq in demandeurs_tries[:nb_places]:
@@ -486,7 +494,7 @@ def executer_tour(
         if not affecte:
             if tour_num == 1:
                 # Fallback obligatoire pour le Tour 1 : compétition avec le plus de places
-                comp_fallback = _trouver_fallback(equipe, competitions, centroides)
+                comp_fallback = _trouver_fallback(equipe, competitions, centroides, fn_distance)
                 if comp_fallback:
                     _affecter_a_competition(equipe, comp_fallback, competitions)
                     nouvelles_affectations[equipe.numero] = comp_fallback
@@ -540,6 +548,7 @@ def _trouver_fallback(
     equipe: Equipe,
     competitions: dict[str, Competition],
     centroides: dict,
+    fn_distance: DistanceFn = distance_entre_adresses,
 ) -> str | None:
     """
     Fallback Tour 1 : renvoie la compétition avec le plus de places restantes.
@@ -561,7 +570,7 @@ def _trouver_fallback(
 
     # Tie-break géographique
     def dist_comp(comp: Competition) -> float:
-        d = distance_entre_adresses(equipe.adresse, comp.adresse, centroides)
+        d = fn_distance(equipe.adresse, comp.adresse, centroides)
         return d if d is not None else float("inf")
 
     return min(avec_max, key=dist_comp).nom
@@ -611,6 +620,7 @@ def lancer_affectation(
     saison_vacances: str = "2026_2027",
     penalite_km: float = PENALITE_VACANCES_KM,
     nb_tours: int = 3,
+    mode_distance: str = "haversine",
 ) -> tuple[list[AffectationResult], list[str]]:
     """
     Lance l'affectation complète (jusqu'à nb_tours tours).
@@ -633,6 +643,22 @@ def lancer_affectation(
     alertes_validation = valider_voeux(voeux_df, competitions_df)
 
     centroides = charger_centroides()
+
+    # Choisir la fonction de distance selon le mode
+    if mode_distance == "route_estimee":
+        fn_distance: DistanceFn = distance_route_estimee
+    elif mode_distance == "osrm":
+        # Collecter les adresses pour le pré-calcul matriciel OSRM
+        adr_equipes = []
+        col_adr = "adresse"
+        if equipes_df is not None and col_adr in equipes_df.columns:
+            adr_equipes = equipes_df[col_adr].dropna().astype(str).tolist()
+        elif col_adr in voeux_df.columns:
+            adr_equipes = voeux_df[col_adr].dropna().astype(str).tolist()
+        adr_comps = competitions_df["adresse"].dropna().astype(str).tolist()
+        fn_distance = creer_fn_distance_osrm(centroides, adr_equipes, adr_comps)
+    else:
+        fn_distance = distance_entre_adresses
 
     vacances: dict | None = None
     try:
@@ -700,6 +726,7 @@ def lancer_affectation(
             centroides=centroides,
             vacances=vacances,
             penalite_km=penalite_km,
+            fn_distance=fn_distance,
         )
         resultats.append(resultat)
         # Arrêter si aucune nouvelle affectation au tour précédent

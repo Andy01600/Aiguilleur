@@ -25,7 +25,9 @@ from utils.helpers import (
     ZONE_PAR_DEPARTEMENT,
     charger_centroides,
     charger_vacances,
+    creer_fn_distance_osrm,
     distance_entre_adresses,
+    distance_route_estimee,
     exporter_excel,
     lire_fichier,
     samedis_dans_fenetre,
@@ -563,6 +565,22 @@ def page_affectation():
             step=50,
             help="Distance ajoutée à une alternative qui tombe pendant les vacances de l'équipe.",
         )
+        mode_distance = st.selectbox(
+            "Mode de calcul des distances",
+            ["Vol d'oiseau (Haversine)", "Route estimée (×1.3)", "Route réelle (OSRM)"],
+            help=(
+                "Vol d'oiseau : ligne droite. "
+                "Route estimée : ×1.3. "
+                "OSRM : distances routières réelles (nécessite internet)."
+            ),
+            key="aff_mode_distance",
+        )
+        _mode_map = {
+            "Vol d'oiseau (Haversine)": "haversine",
+            "Route estimée (×1.3)": "route_estimee",
+            "Route réelle (OSRM)": "osrm",
+        }
+        mode_dist_key = _mode_map[mode_distance]
 
         st.divider()
 
@@ -648,6 +666,7 @@ def page_affectation():
                         saison_vacances=saison,
                         penalite_km=float(penalite),
                         nb_tours=1,
+                        mode_distance=mode_dist_key,
                     )
                     st.session_state.affectation_resultats = resultats
                     # Reconstruire pour les tours suivants
@@ -656,6 +675,7 @@ def page_affectation():
                     st.session_state.affectation_equipes_df = equipes_df
                     st.session_state.affectation_saison = saison
                     st.session_state.affectation_penalite = penalite
+                    st.session_state.affectation_mode_distance = mode_dist_key
                     st.session_state.affectation_tour_actuel = 1
                     for a in alertes_val:
                         st.warning(a)
@@ -675,6 +695,7 @@ def page_affectation():
                         saison_vacances=st.session_state.affectation_saison,
                         penalite_km=float(st.session_state.affectation_penalite),
                         nb_tours=2,
+                        mode_distance=st.session_state.get("affectation_mode_distance", "haversine"),
                     )
                     st.session_state.affectation_resultats = resultats
                     st.session_state.affectation_tour_actuel = 2
@@ -693,6 +714,7 @@ def page_affectation():
                         saison_vacances=st.session_state.affectation_saison,
                         penalite_km=float(st.session_state.affectation_penalite),
                         nb_tours=3,
+                        mode_distance=st.session_state.get("affectation_mode_distance", "haversine"),
                     )
                     st.session_state.affectation_resultats = resultats
                     st.session_state.affectation_tour_actuel = 3
@@ -709,6 +731,7 @@ def page_affectation():
                 competitions_df,
                 equipes_df,
                 saison,
+                mode_distance=st.session_state.get("affectation_mode_distance", "haversine"),
             )
 
 
@@ -718,6 +741,7 @@ def _afficher_resultats_affectation(
     competitions_df,
     equipes_df,
     saison,
+    mode_distance: str = "haversine",
 ):
     """Affiche les résultats de l'affectation."""
 
@@ -832,6 +856,19 @@ def _afficher_resultats_affectation(
     # -----------------------------------------------------------------------
     try:
         centroides = charger_centroides()
+        # Choisir la fonction de distance selon le mode
+        if mode_distance == "route_estimee":
+            _fn_dist = distance_route_estimee
+        elif mode_distance == "osrm":
+            adr_eq_list = [info.get("adresse", "") for info in info_equipes.values() if info.get("adresse")]
+            adr_co_list = [
+                str(row["adresse"]).strip()
+                for _, row in competitions_df.iterrows()
+                if pd.notna(row.get("adresse"))
+            ]
+            _fn_dist = creer_fn_distance_osrm(centroides, adr_eq_list, adr_co_list)
+        else:
+            _fn_dist = distance_entre_adresses
         # Table adresse par compétition
         adr_par_comp: dict[str, str] = {
             str(row["nom_competition"]).strip(): str(row["adresse"]).strip()
@@ -844,7 +881,7 @@ def _afficher_resultats_affectation(
             adresse_equipe = info.get("adresse", "")
             adresse_comp = adr_par_comp.get(str(nom_comp_aff).strip(), "")
             if adresse_equipe and adresse_comp:
-                dist = distance_entre_adresses(adresse_equipe, adresse_comp, centroides)
+                dist = _fn_dist(adresse_equipe, adresse_comp, centroides)
             else:
                 dist = None
             lignes_dist.append({
@@ -861,8 +898,10 @@ def _afficher_resultats_affectation(
             .reset_index(drop=True)
         )
         if not df_dist.empty:
+            _mode_labels = {"haversine": "vol d'oiseau", "route_estimee": "route ×1.3", "osrm": "OSRM"}
+            _label_mode = _mode_labels.get(mode_distance, "vol d'oiseau")
             with st.expander(
-                f"📍 Top 10 équipes les plus éloignées de leur compétition (Tour 1)",
+                f"📍 Top 10 équipes les plus éloignées — {_label_mode} (Tour 1)",
                 expanded=False,
             ):
                 st.dataframe(df_dist, use_container_width=True, hide_index=True)
