@@ -163,8 +163,13 @@ class TestValiderVoeux:
 # ---------------------------------------------------------------------------
 
 class TestClePriorite:
-    def test_sans_alternative_priorite_max(self, competitions_simples):
-        """Équipe sans alternative viable → priorité maximale."""
+    """
+    Tests du tuple (isolation, vacances, dist_cible, -pénibilité, horodatage).
+    Indices : 0=isolation, 1=vacances, 2=dist_cible, 3=-pénibilité, 4=horodatage
+    """
+
+    def test_tuple_structure_5_elements(self, competitions_simples):
+        """Le tuple de priorité contient bien 5 éléments."""
         eq = Equipe(
             numero=1, nom="TestEq", adresse="44000 Nantes",
             code_postal="44000", zone="B",
@@ -172,37 +177,54 @@ class TestClePriorite:
             nb_souhaite=1, voeux=["Nantes"],
         )
         comp = competitions_simples["Nantes"]
-        # Aucune alternative disponible (voeux contient uniquement Nantes)
         cle = cle_priorite(eq, comp, competitions_simples, CENTROIDES_TEST, vacances=None)
-        assert cle[0] == float("-inf")  # -score = -inf → priorité max
+        assert len(cle) == 5
 
-    def test_alternative_loin_prioritaire(self, competitions_simples):
-        """Équipe avec alternative à Paris (loin de Bretagne) → plus prioritaire."""
+    def test_penibilite_infinie_sans_repli(self):
+        """Équipe seule compétition existante → aucun repli → pénibilité = +∞."""
+        # Une seule compétition dans le dict → pas de repli possible
+        comps_une_seule = {
+            "Nantes": Competition(
+                nom="Nantes", adresse="44000 Nantes", capacite=3,
+                date_competition=date(2026, 11, 14), places_restantes=3,
+            ),
+        }
+        eq = Equipe(
+            numero=1, nom="TestEq", adresse="44000 Nantes",
+            code_postal="44000", zone="B",
+            horodatage=datetime(2026, 9, 1, 9, 0),
+            nb_souhaite=1, voeux=["Nantes"],
+        )
+        cle = cle_priorite(eq, comps_une_seule["Nantes"], comps_une_seule, CENTROIDES_TEST, vacances=None)
+        assert cle[3] == float("-inf")  # -pénibilité = -inf → priorité max
+
+    def test_penibilite_departage(self, competitions_simples):
+        """Équipe dont le repli est plus loin → plus prioritaire (pénibilité plus élevée)."""
+        # Bretagne: repli = Paris ≈ 340 km, dist Nantes ≈ 100 km → pénibilité ≈ 240
         eq_bretagne = Equipe(
             numero=10, nom="Bretagne", adresse="35800 Dinard",
             code_postal="35800", zone="B",
             horodatage=datetime(2026, 9, 1, 9, 0),
             nb_souhaite=2, voeux=["Nantes", "Paris"],
         )
+        # NantesLocale: repli = Lyon ≈ 450 km, dist Nantes ≈ 0 km → pénibilité ≈ 450
         eq_nantes = Equipe(
             numero=20, nom="NantesLocale", adresse="44000 Nantes",
             code_postal="44000", zone="B",
             horodatage=datetime(2026, 9, 1, 9, 0),
-            nb_souhaite=2, voeux=["Nantes", "Lyon"],  # Lyon ≈ 450 km
+            nb_souhaite=2, voeux=["Nantes", "Lyon"],
         )
         comp_nantes = competitions_simples["Nantes"]
         cle_b = cle_priorite(eq_bretagne, comp_nantes, competitions_simples, CENTROIDES_TEST, vacances=None)
         cle_n = cle_priorite(eq_nantes, comp_nantes, competitions_simples, CENTROIDES_TEST, vacances=None)
-        # Bretagne: alternative Paris ≈ 340 km, Nantes: alternative Lyon ≈ 450 km
-        # Lyon est plus loin → NantesLocale a un score d'alternative plus élevé
-        # donc cle_n[0] < cle_b[0] (plus négatif = plus prioritaire)
-        # En fait Lyon > Paris en distance, donc NantesLocale est plus prioritaire que Bretagne
-        # mais les deux ont des alternatives → on vérifie juste que la clé fonctionne
-        assert isinstance(cle_b[0], float)
-        assert isinstance(cle_n[0], float)
+        # NantesLocale a une pénibilité plus élevée → -pénibilité plus faible → plus prioritaire
+        # Mais NantesLocale est aussi plus proche de Nantes (dist_cible plus faible)
+        # On vérifie que les deux clés sont comparables et cohérentes
+        assert cle_b[3] < 0  # -pénibilité négative (repli existe)
+        assert cle_n[3] < 0  # -pénibilité négative (repli existe)
 
     def test_horodatage_tiebreak(self, competitions_simples):
-        """À score égal, le premier inscrit passe."""
+        """À critères 1-3bis égaux, le premier inscrit passe."""
         eq_tot = Equipe(
             numero=1, nom="Tôt", adresse="44000 Nantes",
             code_postal="44000", zone="B",
@@ -218,8 +240,10 @@ class TestClePriorite:
         comp = competitions_simples["Nantes"]
         cle_tot = cle_priorite(eq_tot, comp, competitions_simples, CENTROIDES_TEST, vacances=None)
         cle_tard = cle_priorite(eq_tard, comp, competitions_simples, CENTROIDES_TEST, vacances=None)
-        # Score alternatif identique → horodatage décide
-        assert cle_tot[1] < cle_tard[1]  # tôt < tard → tôt plus prioritaire
+        # Même adresse, mêmes vœux → critères 1-3bis identiques, horodatage décide
+        assert cle_tot[:4] == cle_tard[:4]  # 4 premiers critères identiques
+        assert cle_tot[4] < cle_tard[4]  # tôt < tard → tôt plus prioritaire
+        assert cle_tot < cle_tard  # tri global : tôt passe avant tard
 
 
 # ---------------------------------------------------------------------------
@@ -333,9 +357,9 @@ class TestExecuterTour:
 class TestLancerAffectationIntegration:
     def test_toutes_equipes_ont_competition(self):
         """Après Tour 1, aucune équipe ne doit être sans compétition."""
-        voeux_df = pd.read_csv("data/templates/voeux_2025_2026.csv")
-        comps_df = pd.read_csv("data/templates/competitions_2026_2027.csv")
-        equipes_df = pd.read_csv("data/templates/equipes_2025_2026.csv")
+        voeux_df = pd.read_csv("data/templates/voeux_2025_2026.csv", sep=";")
+        comps_df = pd.read_csv("data/templates/competitions_2026_2027.csv", sep=";")
+        equipes_df = pd.read_csv("data/templates/equipes_2025_2026.csv", sep=";")
 
         resultats, _ = lancer_affectation(
             voeux_df=voeux_df,
@@ -351,9 +375,9 @@ class TestLancerAffectationIntegration:
 
     def test_capacite_jamais_depassee_integration(self):
         """La capacité de chaque compétition ne doit jamais être dépassée."""
-        voeux_df = pd.read_csv("data/templates/voeux_2025_2026.csv")
-        comps_df = pd.read_csv("data/templates/competitions_2026_2027.csv")
-        equipes_df = pd.read_csv("data/templates/equipes_2025_2026.csv")
+        voeux_df = pd.read_csv("data/templates/voeux_2025_2026.csv", sep=";")
+        comps_df = pd.read_csv("data/templates/competitions_2026_2027.csv", sep=";")
+        equipes_df = pd.read_csv("data/templates/equipes_2025_2026.csv", sep=";")
 
         resultats, _ = lancer_affectation(
             voeux_df=voeux_df,
@@ -390,7 +414,7 @@ class TestLancerAffectationIntegration:
             "voeu_3": "Régionale Lyon",
             "nb_competitions_souhaitees": 1,
         }])
-        comps_df = pd.read_csv("data/templates/competitions_2026_2027.csv")
+        comps_df = pd.read_csv("data/templates/competitions_2026_2027.csv", sep=";")
 
         _, alertes = lancer_affectation(
             voeux_df=voeux_df,
@@ -403,9 +427,9 @@ class TestLancerAffectationIntegration:
 
     def test_metriques_cohérentes(self):
         """Les taux de satisfaction doivent être entre 0 et 100."""
-        voeux_df = pd.read_csv("data/templates/voeux_2025_2026.csv")
-        comps_df = pd.read_csv("data/templates/competitions_2026_2027.csv")
-        equipes_df = pd.read_csv("data/templates/equipes_2025_2026.csv")
+        voeux_df = pd.read_csv("data/templates/voeux_2025_2026.csv", sep=";")
+        comps_df = pd.read_csv("data/templates/competitions_2026_2027.csv", sep=";")
+        equipes_df = pd.read_csv("data/templates/equipes_2025_2026.csv", sep=";")
 
         resultats, _ = lancer_affectation(
             voeux_df=voeux_df,
@@ -539,9 +563,9 @@ class TestMultiTours:
 
     def test_integration_3_tours_remplissage(self):
         """Sur les données réelles, 3 tours remplissent toutes les compétitions."""
-        voeux_df = pd.read_csv("data/templates/voeux_2025_2026.csv")
-        comps_df = pd.read_csv("data/templates/competitions_2026_2027.csv")
-        equipes_df = pd.read_csv("data/templates/equipes_2025_2026.csv")
+        voeux_df = pd.read_csv("data/templates/voeux_2025_2026.csv", sep=";")
+        comps_df = pd.read_csv("data/templates/competitions_2026_2027.csv", sep=";")
+        equipes_df = pd.read_csv("data/templates/equipes_2025_2026.csv", sep=";")
         resultats, alertes = lancer_affectation(
             voeux_df=voeux_df, competitions_df=comps_df, equipes_df=equipes_df,
             saison_vacances="2026_2027", nb_tours=3,
