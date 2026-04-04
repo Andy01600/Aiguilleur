@@ -1023,6 +1023,18 @@ def _afficher_resultats_affectation(
         sheets_export["Résumé"] = df_resume
         st.dataframe(df_resume, use_container_width=True)
 
+    # Feuille Métriques (SPECS §6.4)
+    lignes_metriques = []
+    for res in resultats:
+        for cle_m, val_m in res.metriques.items():
+            lignes_metriques.append({
+                "Tour": res.tour,
+                "Métrique": cle_m,
+                "Valeur": val_m,
+            })
+    if lignes_metriques:
+        sheets_export["Métriques"] = pd.DataFrame(lignes_metriques)
+
     # Export Excel
     if sheets_export:
         excel_bytes = exporter_excel(sheets_export)

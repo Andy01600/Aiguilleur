@@ -6,7 +6,6 @@ Algorithme en 3 tours :
   Tour 2 : affecte les 2ᵉ compétitions pour les équipes qui le souhaitent
   Tour 3 : affecte les 3ᵉ compétitions
 
-Optimisation globale via programmation linéaire (PuLP).
 Pour chaque place libre, l'algorithme confronte la solidité de TOUTES les
 candidatures et attribue la place à l'équipe avec la plus forte raison.
 
@@ -14,6 +13,7 @@ Critères de priorité (dans cet ordre) :
   1. Isolement géographique (~300 km+ de la compétition la plus proche)
   2. Conflit vacances scolaires (compétition la plus proche en vacances)
   3. Proximité géographique
+  3bis. Pénibilité du repli (équipe avec repli le plus pénible prioritaire)
   4. Ordre d'inscription (horodatage)
 
 L'ordre des vœux est une indication pour maximiser les matchs, pas un
@@ -313,6 +313,109 @@ def calculer_score_alternative(
     return min(distances_effectives)
 
 
+def _periodes_vacances_equipe(
+    equipe: Equipe,
+    vacances: dict[str, list[tuple[date, date]]],
+) -> list[tuple[date, date]]:
+    """Retourne les périodes de vacances de la zone de l'équipe."""
+    if equipe.zone is None or vacances is None:
+        return []
+    return vacances.get(equipe.zone, [])
+
+
+def _equipe_disponible_pendant_vacances(
+    equipe: Equipe,
+    date_comp: date,
+    competitions: dict[str, Competition],
+    vacances: dict[str, list[tuple[date, date]]],
+) -> bool:
+    """
+    Retourne True si l'équipe a signalé sa disponibilité pendant la période
+    de vacances contenant date_comp, c'est-à-dire si l'un de ses vœux tombe
+    dans la même période de vacances.
+    """
+    periodes = _periodes_vacances_equipe(equipe, vacances)
+    # Trouver la période de vacances contenant date_comp
+    periode_cible = None
+    for debut, fin in periodes:
+        if debut <= date_comp <= fin:
+            periode_cible = (debut, fin)
+            break
+    if periode_cible is None:
+        return False
+
+    # L'équipe a-t-elle voté pour une compétition dans cette même période ?
+    for voeu_nom in equipe.voeux:
+        if voeu_nom in competitions:
+            comp_voeu = competitions[voeu_nom]
+            if (
+                comp_voeu.date_competition is not None
+                and periode_cible[0] <= comp_voeu.date_competition <= periode_cible[1]
+            ):
+                return True
+    return False
+
+
+def _calculer_penibilite_repli(
+    equipe: Equipe,
+    competition: Competition,
+    competitions: dict[str, Competition],
+    centroides: dict,
+    vacances: dict | None,
+    dist_cible: float,
+    fn_distance: DistanceFn = distance_entre_adresses,
+) -> float:
+    """
+    Calcule la pénibilité du repli pour le critère 3bis.
+
+    Repli objectif = compétition viable la plus proche, en excluant :
+      a) la compétition disputée
+      b) les compétitions en conflit vacances de l'équipe, SAUF si :
+         - l'équipe les a incluses dans ses vœux, OU
+         - l'équipe a voté pour une compétition tombant dans la même
+           période de vacances (signal de disponibilité)
+
+    Pénibilité = distance(équipe → repli) − distance(équipe → compétition disputée)
+    Si aucun repli viable → +∞ (priorité maximale)
+    """
+    if not equipe.adresse:
+        return float("inf")
+
+    meilleure_dist_repli = float("inf")
+
+    for nom, comp in competitions.items():
+        # Exclure la compétition disputée
+        if nom == competition.nom:
+            continue
+
+        # Vérifier conflit vacances
+        if (
+            vacances is not None
+            and equipe.zone is not None
+            and comp.date_competition is not None
+            and est_en_vacances(comp.date_competition, equipe.zone, vacances)
+        ):
+            # Exception : l'équipe a voté pour cette compétition (signal direct)
+            if nom in equipe.voeux:
+                pass  # disponible, ne pas exclure
+            # Exception : l'équipe a voté pour une autre comp dans la même période
+            elif _equipe_disponible_pendant_vacances(
+                equipe, comp.date_competition, competitions, vacances
+            ):
+                pass  # disponible, ne pas exclure
+            else:
+                continue  # exclure cette compétition comme repli
+
+        dist = fn_distance(equipe.adresse, comp.adresse, centroides)
+        if dist is not None and dist < meilleure_dist_repli:
+            meilleure_dist_repli = dist
+
+    if meilleure_dist_repli == float("inf"):
+        return float("inf")
+
+    return meilleure_dist_repli - dist_cible
+
+
 def cle_priorite(
     equipe: Equipe,
     competition: Competition,
@@ -324,11 +427,12 @@ def cle_priorite(
 ) -> tuple:
     """
     Retourne une clé de tri pour l'équipe (ordre croissant = priorité décroissante).
-    Ordre de priorité (conforme SPECS) :
+    Ordre de priorité (conforme SPECS §4.4) :
       1. Isolation géographique (>300 km de la comp la plus proche) → prioritaire
       2. Conflit vacances (la comp la plus proche tombe pendant les vacances) → prioritaire
       3. Distance à la compétition cible ASC (équipe la plus proche prioritaire)
-      4. Horodatage ASC — uniquement si 1, 2 et 3 sont égaux
+      3bis. Pénibilité du repli DESC (équipe avec repli le plus pénible prioritaire)
+      4. Horodatage ASC — uniquement si 1, 2, 3 et 3bis sont égaux
     """
     # Critère 1 : équipe isolée si la compétition la plus proche est à >300 km
     dist_min = _distance_min_competitions(equipe, competitions, centroides, fn_distance)
@@ -350,14 +454,21 @@ def cle_priorite(
     if dist_cible is None:
         dist_cible = float("inf")
 
+    # Critère 3bis : pénibilité du repli (inversé car tri ascendant)
+    penibilite = _calculer_penibilite_repli(
+        equipe, competition, competitions, centroides, vacances, dist_cible, fn_distance,
+    )
+
     # Critère 4 : horodatage
     horodatage_key = equipe.horodatage or datetime.max
 
-    # Tri ascendant : 0 = prioritaire (critères 1 et 2), puis distance, puis horodatage
+    # Tri ascendant : 0 = prioritaire (critères 1 et 2), puis distance,
+    # puis -pénibilité (plus pénible = plus prioritaire), puis horodatage
     return (
         0 if is_isolated else 1,
         0 if has_vacation_conflict else 1,
         dist_cible,
+        -penibilite,
         horodatage_key,
     )
 
