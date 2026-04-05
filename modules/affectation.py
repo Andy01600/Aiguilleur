@@ -391,6 +391,10 @@ def _calculer_penibilite_repli(
         if nom == competition.nom:
             continue
 
+        # Exclure les compétitions déjà affectées à cette équipe (Tours 2+)
+        if nom in equipe.affectations:
+            continue
+
         # Vérifier conflit vacances
         if (
             vacances is not None
