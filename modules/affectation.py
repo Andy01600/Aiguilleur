@@ -12,9 +12,9 @@ candidatures et attribue la place à l'équipe avec la plus forte raison.
 Critères de priorité (dans cet ordre) :
   1. Isolement géographique (~300 km+ de la compétition la plus proche)
   2. Conflit vacances scolaires (compétition la plus proche en vacances)
-  3. Proximité géographique
-  3bis. Pénibilité du repli (équipe avec repli le plus pénible prioritaire)
-  4. Ordre d'inscription (horodatage)
+  3. Ratio de pénibilité du repli (ratio élevé = repli proportionnellement coûteux → prioritaire)
+  4. Proximité géographique (départage si ratios égaux)
+  5. Ordre d'inscription (horodatage)
 
 L'ordre des vœux est une indication pour maximiser les matchs, pas un
 critère de priorité.
@@ -375,7 +375,10 @@ def _calculer_penibilite_repli(
          - l'équipe a voté pour une compétition tombant dans la même
            période de vacances (signal de disponibilité)
 
-    Pénibilité = distance(équipe → repli) − distance(équipe → compétition disputée)
+    Pénibilité = distance(équipe → repli) / distance(équipe → compétition disputée)
+    Ratio > 1 signifie que le repli est plus loin que la cible.
+    Plus le ratio est élevé, plus le repli est pénalisant proportionnellement.
+    Si dist_cible ≈ 0, on retourne +∞ (l'équipe est sur place, tout repli est pénible).
     Si aucun repli viable → +∞ (priorité maximale)
     """
     if not equipe.adresse:
@@ -413,7 +416,12 @@ def _calculer_penibilite_repli(
     if meilleure_dist_repli == float("inf"):
         return float("inf")
 
-    return meilleure_dist_repli - dist_cible
+    # Ratio : repli / cible. Si l'équipe est sur place (dist_cible ≈ 0), tout repli
+    # est infiniment pénible.
+    if dist_cible < 1.0:
+        return float("inf")
+
+    return meilleure_dist_repli / dist_cible
 
 
 def cle_priorite(
@@ -430,9 +438,10 @@ def cle_priorite(
     Ordre de priorité (conforme SPECS §4.4) :
       1. Isolation géographique (>300 km de la comp la plus proche) → prioritaire
       2. Conflit vacances (la comp la plus proche tombe pendant les vacances) → prioritaire
-      3. Distance à la compétition cible ASC (équipe la plus proche prioritaire)
-      3bis. Pénibilité du repli DESC (équipe avec repli le plus pénible prioritaire)
-      4. Horodatage ASC — uniquement si 1, 2, 3 et 3bis sont égaux
+      3. Ratio de pénibilité du repli DESC (ratio le plus élevé = repli le plus
+         contraignant proportionnellement → prioritaire)
+      4. Distance à la compétition cible ASC (départage si ratios égaux)
+      5. Horodatage ASC (départage final)
     """
     # Critère 1 : équipe isolée si la compétition la plus proche est à >300 km
     dist_min = _distance_min_competitions(equipe, competitions, centroides, fn_distance)
@@ -462,13 +471,14 @@ def cle_priorite(
     # Critère 4 : horodatage
     horodatage_key = equipe.horodatage or datetime.max
 
-    # Tri ascendant : 0 = prioritaire (critères 1 et 2), puis distance,
-    # puis -pénibilité (plus pénible = plus prioritaire), puis horodatage
+    # Tri ascendant : 0 = prioritaire (critères 1 et 2),
+    # puis -ratio pénibilité (plus le ratio est élevé, plus l'équipe est prioritaire),
+    # puis distance brute (départage si ratio égal), puis horodatage
     return (
         0 if is_isolated else 1,
         0 if has_vacation_conflict else 1,
-        dist_cible,
         -penibilite,
+        dist_cible,
         horodatage_key,
     )
 

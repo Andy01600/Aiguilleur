@@ -220,14 +220,8 @@ L'algorithme doit avoir une **vue globale** : pour chaque place disponible, il c
    → Favoriser leur vœu avec la compétition la plus proche géographiquement
      hors vacances scolaires de l'équipe.
 
-3. Proximité géographique
-   → L'équipe la plus proche géographiquement de la compétition est favorisée,
-     en privilégiant les compétitions hors vacances scolaires de l'équipe.
-
-3bis. Pénibilité du repli
-   → Départage naturel après la distance (critère 3) : quand deux équipes sont
-     à distance similaire de la compétition disputée, celle dont le repli est
-     le plus pénible est favorisée.
+3. Ratio de pénibilité du repli (PRIORITAIRE sur la distance brute)
+   → L'équipe dont le repli est proportionnellement le plus coûteux est favorisée.
    → Le repli objectif d'une équipe est la compétition viable la plus proche,
      en excluant :
        a) la compétition disputée
@@ -236,17 +230,22 @@ L'algorithme doit avoir une **vue globale** : pour chaque place disponible, il c
           - l'équipe les a incluses dans ses vœux (signal de disponibilité), OU
           - l'équipe a voté pour une autre compétition tombant dans la même
             période de vacances (signal de disponibilité sur cette période)
-   → Pénibilité = distance(équipe → repli) - distance(équipe → compétition disputée)
-   → Plus la pénibilité est élevée, plus l'équipe a besoin de CETTE place.
-   → Cas limite : si aucune compétition viable n'existe comme repli (toutes
-     exclues), pénibilité = +∞ (l'équipe est maximalement prioritaire, elle n'a
-     aucune alternative).
-   → Implémentation : s'insère dans le tuple de cle_priorite() entre dist_cible
-     et horodatage. Le signe est inversé (−pénibilité) car le tri est ascendant.
-     Tuple final : (isolation, vacances, dist_cible, −pénibilité, horodatage).
+   → Ratio = distance(équipe → repli) / distance(équipe → compétition disputée)
+   → Ratio > 1 : le repli est plus loin. Plus le ratio est élevé, plus le
+     changement de compétition est pénalisant proportionnellement.
+   → Cas limites :
+     - Si dist_cible < 1 km (équipe sur place), ratio = +∞ (tout repli est pénible).
+     - Si aucune compétition viable n'existe comme repli, ratio = +∞.
 
-4. Ordre d'inscription (date/heure de soumission du formulaire)
+4. Proximité géographique
+   → Départage si les ratios de pénibilité sont égaux : l'équipe la plus proche
+     géographiquement de la compétition est favorisée.
+
+5. Ordre d'inscription (date/heure de soumission du formulaire)
    → Départage final si les critères ci-dessus ne suffisent pas.
+
+Implémentation : tuple de tri ascendant dans cle_priorite() :
+  (isolation, vacances, −ratio, dist_cible, horodatage)
 ```
 
 **Tours 2 & 3 — Équipes multi-compétitions**
@@ -479,9 +478,9 @@ Critères de priorité (dans cet ordre) :
 
 1. **Isolement géographique** — Équipes dont la compétition la plus proche (toutes compétitions confondues) est à ~300 km+. Favoriser leur vœu avec la compétition la plus proche parmi leurs vœux, en favorisant les premiers vœux.
 2. **Conflit vacances scolaires** — Équipes dont la compétition la plus proche tombe pendant leurs vacances scolaires. Favoriser la compétition la plus proche hors vacances.
-3. **Proximité géographique** — Équipe la plus proche de la compétition, en privilégiant hors vacances scolaires.
-3bis. **Pénibilité du repli** — Départage naturel après la distance : favoriser l'équipe dont le repli objectif est le plus pénible. Repli = compétition viable la plus proche, hors compétition disputée, hors vacances sauf si l'équipe a voté pour une compétition tombant dans la même période de vacances (signal de disponibilité). Pénibilité = distance(équipe → repli) − distance(équipe → compétition disputée). Si aucun repli viable n'existe, pénibilité = +∞.
-4. **Ordre d'inscription** — Horodatage de soumission du formulaire (départage final).
+3. **Ratio de pénibilité du repli** — Prioritaire sur la distance brute. Ratio = distance(équipe → repli) / distance(équipe → cible). L'équipe dont le repli est proportionnellement le plus coûteux est favorisée. Si dist_cible < 1 km ou aucun repli viable, ratio = +∞.
+4. **Proximité géographique** — Départage si ratios égaux : équipe la plus proche de la compétition.
+5. **Ordre d'inscription** — Horodatage de soumission du formulaire (départage final).
 
 ### Workflows indépendants
 

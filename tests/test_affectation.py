@@ -164,8 +164,8 @@ class TestValiderVoeux:
 
 class TestClePriorite:
     """
-    Tests du tuple (isolation, vacances, dist_cible, -pénibilité, horodatage).
-    Indices : 0=isolation, 1=vacances, 2=dist_cible, 3=-pénibilité, 4=horodatage
+    Tests du tuple (isolation, vacances, -ratio_penibilite, dist_cible, horodatage).
+    Indices : 0=isolation, 1=vacances, 2=-ratio, 3=dist_cible, 4=horodatage
     """
 
     def test_tuple_structure_5_elements(self, competitions_simples):
@@ -181,8 +181,7 @@ class TestClePriorite:
         assert len(cle) == 5
 
     def test_penibilite_infinie_sans_repli(self):
-        """Équipe seule compétition existante → aucun repli → pénibilité = +∞."""
-        # Une seule compétition dans le dict → pas de repli possible
+        """Équipe seule compétition existante → aucun repli → ratio = +∞."""
         comps_une_seule = {
             "Nantes": Competition(
                 nom="Nantes", adresse="44000 Nantes", capacite=3,
@@ -196,18 +195,18 @@ class TestClePriorite:
             nb_souhaite=1, voeux=["Nantes"],
         )
         cle = cle_priorite(eq, comps_une_seule["Nantes"], comps_une_seule, CENTROIDES_TEST, vacances=None)
-        assert cle[3] == float("-inf")  # -pénibilité = -inf → priorité max
+        assert cle[2] == float("-inf")  # -ratio = -inf → priorité max
 
-    def test_penibilite_departage(self, competitions_simples):
-        """Équipe dont le repli est plus loin → plus prioritaire (pénibilité plus élevée)."""
-        # Bretagne: repli = Paris ≈ 340 km, dist Nantes ≈ 100 km → pénibilité ≈ 240
+    def test_ratio_penibilite_prioritaire_sur_distance(self, competitions_simples):
+        """Équipe avec ratio de repli plus élevé passe devant, même si plus loin."""
+        # Bretagne: dist Nantes ≈ 100 km, repli Paris ≈ 340 km → ratio ≈ 3.4
         eq_bretagne = Equipe(
             numero=10, nom="Bretagne", adresse="35800 Dinard",
             code_postal="35800", zone="B",
             horodatage=datetime(2026, 9, 1, 9, 0),
             nb_souhaite=2, voeux=["Nantes", "Paris"],
         )
-        # NantesLocale: repli = Lyon ≈ 450 km, dist Nantes ≈ 0 km → pénibilité ≈ 450
+        # NantesLocale: dist Nantes ≈ 0 km → ratio = +∞ (dist_cible < 1 km)
         eq_nantes = Equipe(
             numero=20, nom="NantesLocale", adresse="44000 Nantes",
             code_postal="44000", zone="B",
@@ -217,14 +216,12 @@ class TestClePriorite:
         comp_nantes = competitions_simples["Nantes"]
         cle_b = cle_priorite(eq_bretagne, comp_nantes, competitions_simples, CENTROIDES_TEST, vacances=None)
         cle_n = cle_priorite(eq_nantes, comp_nantes, competitions_simples, CENTROIDES_TEST, vacances=None)
-        # NantesLocale a une pénibilité plus élevée → -pénibilité plus faible → plus prioritaire
-        # Mais NantesLocale est aussi plus proche de Nantes (dist_cible plus faible)
-        # On vérifie que les deux clés sont comparables et cohérentes
-        assert cle_b[3] < 0  # -pénibilité négative (repli existe)
-        assert cle_n[3] < 0  # -pénibilité négative (repli existe)
+        # NantesLocale a ratio +∞ (sur place) → -ratio = -inf → passe devant Bretagne
+        assert cle_n[2] < cle_b[2]  # -inf < -3.4
+        assert cle_n < cle_b  # NantesLocale prioritaire globalement
 
     def test_horodatage_tiebreak(self, competitions_simples):
-        """À critères 1-3bis égaux, le premier inscrit passe."""
+        """À critères 1-4 égaux, le premier inscrit passe."""
         eq_tot = Equipe(
             numero=1, nom="Tôt", adresse="44000 Nantes",
             code_postal="44000", zone="B",
@@ -240,7 +237,7 @@ class TestClePriorite:
         comp = competitions_simples["Nantes"]
         cle_tot = cle_priorite(eq_tot, comp, competitions_simples, CENTROIDES_TEST, vacances=None)
         cle_tard = cle_priorite(eq_tard, comp, competitions_simples, CENTROIDES_TEST, vacances=None)
-        # Même adresse, mêmes vœux → critères 1-3bis identiques, horodatage décide
+        # Même adresse, mêmes vœux → critères 1-4 identiques, horodatage décide
         assert cle_tot[:4] == cle_tard[:4]  # 4 premiers critères identiques
         assert cle_tot[4] < cle_tard[4]  # tôt < tard → tôt plus prioritaire
         assert cle_tot < cle_tard  # tri global : tôt passe avant tard
