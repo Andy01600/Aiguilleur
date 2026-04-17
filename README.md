@@ -2,7 +2,7 @@
 
 Outil de planification des compétitions **FIRST Tech Challenge (FTC) en France**, saison 2025-2026.
 
-**Accès en ligne :** [https://magouilleuse-dsjtekz82q6oggskpupg6z.streamlit.app/](https://magouilleuse-dsjtekz82q6oggskpupg6z.streamlit.app/)
+**Accès en ligne :** [https://aiguilleur.streamlit.app/](https://aiguilleur.streamlit.app/)
 
 ---
 
