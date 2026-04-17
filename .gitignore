@@ -6,3 +6,4 @@ data/input/
 !data/templates/*.csv
 .streamlit/
 .pytest_cache/
+.claude/
