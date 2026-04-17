@@ -1,4 +1,4 @@
-# CLAUDE.md — Magouilleuse (FTC France Planning Tool)
+# CLAUDE.md — Aiguilleur (FTC France Planning Tool)
 
 > Ce fichier est la source de vérité pour Claude Code sur ce projet.
 > Il est mis à jour automatiquement au fur et à mesure de l'avancement.
@@ -7,7 +7,7 @@
 
 ## Contexte du projet
 
-**Nom du projet :** Magouilleuse
+**Nom du projet :** Aiguilleur
 **Objectif :** Outil de planification des compétitions FIRST Tech Challenge (FTC) en France.
 **Responsable :** Programme Manager FTC France
 **Saison cible :** 2025-2026
@@ -36,7 +36,7 @@ Le projet se décompose en deux modules indépendants mais liés :
 ## Structure du projet
 
 ```
-Magouilleuse/
+Aiguilleur/
 ├── CLAUDE.md               ← ce fichier
 ├── SPECS.md                ← spécifications détaillées
 ├── requirements.txt        ← dépendances Python

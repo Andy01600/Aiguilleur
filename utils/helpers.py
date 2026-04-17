@@ -1,5 +1,5 @@
 """
-Fonctions utilitaires partagées entre les modules Magouilleuse.
+Fonctions utilitaires partagées entre les modules Aiguilleur.
 """
 
 import json

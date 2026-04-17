@@ -1,4 +1,4 @@
-# Magouilleuse — Outil de planification FTC France
+# L'Aiguilleur — Outil de planification FTC France
 
 Outil de planification des compétitions **FIRST Tech Challenge (FTC) en France**, saison 2025-2026.
 

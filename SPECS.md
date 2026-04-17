@@ -1,4 +1,4 @@
-# SPECS.md — Spécifications détaillées de Magouilleuse
+# SPECS.md — Spécifications détaillées de l'Aiguilleur
 
 > Document de référence pour le développement de l'outil de planification FTC France.
 > Mis à jour le 2026-03-31.
@@ -21,7 +21,7 @@
 
 ## 1. Vue d'ensemble
 
-**Magouilleuse** est une application web Python/Streamlit en deux modules **indépendants** :
+**L'Aiguilleur** est une application web Python/Streamlit en deux modules **indépendants** :
 
 ```
 [Fichiers CSV/Excel en entrée]
@@ -172,7 +172,7 @@ Répartir les équipes dans les compétitions selon leurs vœux, en :
 | `voeux` | fichier | Fichier Excel/CSV des vœux (issu du Forms) |
 | `competitions` | fichier | Fichier Excel/CSV des compétitions avec dates et capacités |
 
-> Le fichier vœux est généré depuis un **Google Forms ou Microsoft Forms** rempli par les équipes, exporté en Excel et importé directement dans Magouilleuse.
+> Le fichier vœux est généré depuis un **Google Forms ou Microsoft Forms** rempli par les équipes, exporté en Excel et importé directement dans l'Aiguilleur.
 
 ### 4.3 Sorties
 

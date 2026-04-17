@@ -1,5 +1,5 @@
 """
-Magouilleuse — Outil de planification FTC France
+Aiguilleur — Outil de planification FTC France
 Interface Streamlit principale.
 """
 
@@ -38,7 +38,7 @@ from utils.helpers import (
 # ---------------------------------------------------------------------------
 
 st.set_page_config(
-    page_title="Magouilleuse — FTC France",
+    page_title="Aiguilleur — FTC France",
     page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -49,7 +49,7 @@ st.set_page_config(
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
-    st.title("🤖 Magouilleuse")
+    st.title("🤖 L'Aiguilleur")
     st.caption("Outil de planification FTC France")
     st.divider()
     page = st.radio(
@@ -63,10 +63,10 @@ with st.sidebar:
 # ---------------------------------------------------------------------------
 
 def page_accueil():
-    st.title("🤖 Magouilleuse — Planification FTC France")
+    st.title("🤖 L'Aiguilleur — Planification FTC France")
     st.markdown(
         """
-        Bienvenue dans **Magouilleuse**, l'outil de planification des compétitions
+        Bienvenue dans **l'Aiguilleur**, l'outil de planification des compétitions
         **FIRST Tech Challenge (FTC) France** pour la saison 2025-2026 / 2026-2027.
 
         ---
