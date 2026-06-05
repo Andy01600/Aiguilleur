@@ -82,8 +82,8 @@ Aiguilleur/
 | Normalisation noms compétitions | ✅ Implémentée | NFD + strip + lower dans lancer_affectation() |
 | Diagnostic correspondance noms | ✅ Implémenté | Expander dans Module 2, affiche repr() des noms |
 | Debug algorithme Phase A | ✅ Implémenté | Traces [DEBUG Tn] dans executer_tour(), expander dédié |
-| Jeu de données test | 🔄 En cours | Templates avec données réelles 2026-2027 créés |
-| Tests | ⬜ À écrire | |
+| Jeu de données test | ✅ Finalisé | 119 équipes + vœux 2026-2027 dans data/test/ |
+| Tests | ✅ Effectués | Tests manuels sur Streamlit Cloud avec jeu de données réel |
 | Déploiement Streamlit Cloud | ⬜ Optionnel | |
 
 ---
