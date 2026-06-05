@@ -530,6 +530,8 @@ def page_affectation():
         st.session_state.affectation_competitions = None
     if "affectation_tour_actuel" not in st.session_state:
         st.session_state.affectation_tour_actuel = 0
+    if "affectation_mode_affectation" not in st.session_state:
+        st.session_state.affectation_mode_affectation = "glouton"
 
     col_inputs, col_resultats = st.columns([1, 2])
 
@@ -581,6 +583,27 @@ def page_affectation():
             "Route réelle (OSRM)": "osrm",
         }
         mode_dist_key = _mode_map[mode_distance]
+
+        mode_affectation_label = st.selectbox(
+            "Mode d'affectation",
+            [
+                "Gale-Shapley (stable, recommandé)",
+                "Glouton (Phase A verrouillée)",
+                "Avec displacement (intermédiaire)",
+            ],
+            help=(
+                "Gale-Shapley : affectation stable garantie, pas de dépendance à l'ordre. "
+                "Glouton : Phase A verrouillée, Phase B prend uniquement les places libres. "
+                "Displacement : Phase B peut challenger Phase A (défauts connus, voir doc)."
+            ),
+            key="aff_mode_affectation",
+        )
+        _mode_aff_map = {
+            "Gale-Shapley (stable, recommandé)": "gale_shapley",
+            "Glouton (Phase A verrouillée)": "glouton",
+            "Avec displacement (intermédiaire)": "displacement",
+        }
+        mode_aff_key = _mode_aff_map[mode_affectation_label]
 
         st.divider()
 
@@ -667,6 +690,7 @@ def page_affectation():
                         penalite_km=float(penalite),
                         nb_tours=1,
                         mode_distance=mode_dist_key,
+                        mode_affectation=mode_aff_key,
                     )
                     st.session_state.affectation_resultats = resultats
                     # Reconstruire pour les tours suivants
@@ -676,6 +700,7 @@ def page_affectation():
                     st.session_state.affectation_saison = saison
                     st.session_state.affectation_penalite = penalite
                     st.session_state.affectation_mode_distance = mode_dist_key
+                    st.session_state.affectation_mode_affectation = mode_aff_key
                     st.session_state.affectation_tour_actuel = 1
                     for a in alertes_val:
                         st.warning(a)
@@ -696,6 +721,7 @@ def page_affectation():
                         penalite_km=float(st.session_state.affectation_penalite),
                         nb_tours=2,
                         mode_distance=st.session_state.get("affectation_mode_distance", "haversine"),
+                        mode_affectation=st.session_state.get("affectation_mode_affectation", "glouton"),
                     )
                     st.session_state.affectation_resultats = resultats
                     st.session_state.affectation_tour_actuel = 2
@@ -715,6 +741,7 @@ def page_affectation():
                         penalite_km=float(st.session_state.affectation_penalite),
                         nb_tours=3,
                         mode_distance=st.session_state.get("affectation_mode_distance", "haversine"),
+                        mode_affectation=st.session_state.get("affectation_mode_affectation", "glouton"),
                     )
                     st.session_state.affectation_resultats = resultats
                     st.session_state.affectation_tour_actuel = 3

@@ -207,7 +207,7 @@ def construire_competitions(
         date_comp = None
         if "date_forcee" in ligne.index and pd.notna(ligne.get("date_forcee")):
             try:
-                date_comp = pd.to_datetime(ligne["date_forcee"]).date()
+                date_comp = pd.to_datetime(ligne["date_forcee"], dayfirst=True).date()
             except Exception:
                 pass
 
@@ -395,6 +395,10 @@ def _calculer_penibilite_repli(
         if nom in equipe.affectations:
             continue
 
+        # Exclure les compétitions pleines (ne sont plus des replis viables)
+        if comp.places_restantes <= 0:
+            continue
+
         # Vérifier conflit vacances
         if (
             vacances is not None
@@ -510,6 +514,7 @@ def executer_tour(
     vacances: dict | None,
     penalite_km: float = PENALITE_VACANCES_KM,
     fn_distance: DistanceFn = distance_entre_adresses,
+    mode_affectation: str = "glouton",
 ) -> AffectationResult:
     """
     Exécute un tour d'affectation.
@@ -517,7 +522,18 @@ def executer_tour(
     Tour 1 : toutes les équipes (garantit 1 compétition chacune)
     Tour 2 : équipes souhaitant ≥ 2 compétitions
     Tour 3 : équipes souhaitant ≥ 3 compétitions
+
+    mode_affectation :
+      "glouton"      — Phase A verrouillée, Phase B ne prend que les places libres.
+      "displacement" — Phase B peut déplacer un occupant Phase A si son claim est plus fort.
+                       Les équipes déplacées réintègrent une file sans displacement
+                       (évite les cascades infinies).
     """
+    if mode_affectation == "gale_shapley":
+        return _executer_tour_gs(
+            tour_num, equipes, competitions, centroides, vacances, penalite_km, fn_distance
+        )
+
     alertes: list[str] = []
     nouvelles_affectations: dict[int, str] = {}
 
@@ -600,6 +616,8 @@ def executer_tour(
     # Phase B : Traiter les non-affectés (vœux suivants ou fallback)
     # -----------------------------------------------------------------------
     non_affectes_final: list[int] = []
+    # (equipe, nom_comp depuis laquelle déplacée) — traitement sans displacement
+    deplaces: list[tuple[Equipe, str]] = []
 
     for equipe in non_affectes_phase_a:
         voeux_restants = [
@@ -615,6 +633,35 @@ def executer_tour(
                 nouvelles_affectations[equipe.numero] = voeu
                 affecte = True
                 break
+            elif mode_affectation == "displacement":
+                plus_faible = _trouver_plus_faible_occupant(
+                    comp, equipes, competitions, centroides, vacances, penalite_km, fn_distance
+                )
+                if plus_faible is not None:
+                    cle_entrant = cle_priorite(
+                        equipe, comp, competitions, centroides, vacances, penalite_km, fn_distance
+                    )
+                    cle_occup = cle_priorite(
+                        plus_faible, comp, competitions, centroides, vacances, penalite_km, fn_distance
+                    )
+                    if cle_entrant < cle_occup:
+                        # Désaffecter le plus faible
+                        comp.places_restantes += 1
+                        comp.equipes_affectees.remove(plus_faible.numero)
+                        plus_faible.affectations.remove(voeu)
+                        if nouvelles_affectations.get(plus_faible.numero) == voeu:
+                            del nouvelles_affectations[plus_faible.numero]
+                        # Affecter l'entrant
+                        _affecter_a_competition(equipe, voeu, competitions)
+                        nouvelles_affectations[equipe.numero] = voeu
+                        deplaces.append((plus_faible, voeu))
+                        alertes.append(
+                            f"[DEBUG T{tour_num}] Displacement : équipe {equipe.numero} "
+                            f"({equipe.nom}) déplace équipe {plus_faible.numero} "
+                            f"({plus_faible.nom}) de « {voeu} »."
+                        )
+                        affecte = True
+                        break
 
         if not affecte:
             if tour_num == 1:
@@ -635,6 +682,39 @@ def executer_tour(
                     )
             else:
                 # Tours 2 & 3 : pas d'obligation, on signale juste
+                non_affectes_final.append(equipe.numero)
+
+    # Réaffecter les équipes déplacées (sans displacement pour éviter les cascades)
+    for equipe, comp_source in deplaces:
+        voeux_restants = [
+            v for v in equipe.voeux
+            if v not in equipe.affectations and v in competitions and v != comp_source
+        ]
+        affecte = False
+        for voeu in voeux_restants:
+            comp = competitions[voeu]
+            if comp.places_restantes > 0:
+                _affecter_a_competition(equipe, voeu, competitions)
+                nouvelles_affectations[equipe.numero] = voeu
+                affecte = True
+                break
+        if not affecte:
+            if tour_num == 1:
+                comp_fallback = _trouver_fallback(equipe, competitions, centroides, fn_distance)
+                if comp_fallback:
+                    _affecter_a_competition(equipe, comp_fallback, competitions)
+                    nouvelles_affectations[equipe.numero] = comp_fallback
+                    alertes.append(
+                        f"Équipe {equipe.numero} ({equipe.nom}) déplacée puis affectée "
+                        f"en fallback à « {comp_fallback} »."
+                    )
+                else:
+                    non_affectes_final.append(equipe.numero)
+                    alertes.append(
+                        f"⚠️ Équipe {equipe.numero} ({equipe.nom}) : impossible à "
+                        f"réaffecter après displacement !"
+                    )
+            else:
                 non_affectes_final.append(equipe.numero)
 
     # -----------------------------------------------------------------------
@@ -701,6 +781,209 @@ def _trouver_fallback(
     return min(avec_max, key=dist_comp).nom
 
 
+def _trouver_plus_faible_occupant(
+    competition: Competition,
+    equipes: dict[int, Equipe],
+    competitions: dict[str, Competition],
+    centroides: dict,
+    vacances: dict | None,
+    penalite_km: float,
+    fn_distance: DistanceFn,
+) -> Equipe | None:
+    """
+    Retourne l'occupant actuel de la compétition avec le claim le plus faible
+    (clé de priorité la plus haute dans le tri ascendant).
+    Utilisé par le mode displacement pour identifier qui peut être déplacé.
+    """
+    occupants = [equipes[num] for num in competition.equipes_affectees if num in equipes]
+    if not occupants:
+        return None
+    return max(
+        occupants,
+        key=lambda eq: cle_priorite(
+            eq, competition, competitions, centroides, vacances, penalite_km, fn_distance
+        ),
+    )
+
+
+def _executer_tour_gs(
+    tour_num: int,
+    equipes: dict[int, Equipe],
+    competitions: dict[str, Competition],
+    centroides: dict,
+    vacances: dict | None,
+    penalite_km: float,
+    fn_distance: DistanceFn,
+) -> AffectationResult:
+    """
+    Tour d'affectation Gale-Shapley (deferred acceptance, équipes proposeuses).
+
+    Principe :
+      1. Chaque équipe propose à son meilleur vœu non encore rejeté.
+      2. Chaque compétition évalue provisoirement toutes les propositions reçues
+         (nouvelles + acceptations provisoires existantes) et conserve les N
+         meilleurs claims ; les autres sont rejetés et proposent au vœu suivant.
+      3. On répète jusqu'à convergence (plus aucun rejet).
+
+    Garanties :
+      - Stable : aucune paire (équipe, compétition) mutuellement préférable ne
+        subsiste à la convergence.
+      - Terminaison : O(n × m) itérations max (chaque équipe ne propose qu'une
+        fois à chaque compétition).
+      - Déterministe : l'ordre de traitement n'influe pas sur le résultat final.
+      - La pénibilité est réévaluée dynamiquement : une compétition provisoirement
+        pleine est exclue du calcul de repli (via places_restantes mis à jour
+        après chaque réévaluation).
+    """
+    alertes: list[str] = []
+    nouvelles_affectations: dict[int, str] = {}
+    non_affectes_final: list[int] = []
+
+    if tour_num == 1:
+        eligibles = {num: eq for num, eq in equipes.items()}
+    else:
+        eligibles = {
+            num: eq for num, eq in equipes.items() if eq.nb_souhaite >= tour_num
+        }
+
+    if not eligibles:
+        return AffectationResult(
+            tour=tour_num,
+            nouvelles_affectations={},
+            non_affectees=[],
+            alertes=alertes,
+            metriques=_calculer_metriques(tour_num, equipes, competitions, {}),
+        )
+
+    # Capacité disponible au début de ce tour (tient compte des tours précédents)
+    capacite_dispo: dict[str, int] = {
+        nom: comp.places_restantes for nom, comp in competitions.items()
+    }
+
+    # Acceptations provisoires pour ce tour {nom_comp: [num_equipe, ...]}
+    tentatives: dict[str, list[int]] = {nom: [] for nom in competitions}
+    # Compétitions déjà rejetées par chaque équipe (ne plus proposer)
+    rejete_de: dict[int, set[str]] = {num: set() for num in eligibles}
+    # Équipes en attente de faire une proposition
+    en_attente: set[int] = set(eligibles.keys())
+
+    # Borne de terminaison : n×m propositions maximum
+    for _ in range(len(eligibles) * len(competitions) + 1):
+        if not en_attente:
+            break
+
+        # --- Collecte des propositions ---
+        propositions: dict[str, list[int]] = {nom: [] for nom in competitions}
+        sans_voeu: list[int] = []
+
+        for num in list(en_attente):
+            equipe = eligibles[num]
+            voeux_eligibles = [
+                v for v in equipe.voeux
+                if v in competitions
+                and v not in equipe.affectations
+                and v not in rejete_de[num]
+            ]
+            if not voeux_eligibles:
+                sans_voeu.append(num)
+                en_attente.discard(num)
+                continue
+            propositions[voeux_eligibles[0]].append(num)
+            en_attente.discard(num)
+
+        # --- Évaluation par compétition ---
+        for nom_comp, comp in competitions.items():
+            all_candidats = list(set(tentatives[nom_comp] + propositions[nom_comp]))
+            if not all_candidats:
+                continue
+
+            cap = capacite_dispo[nom_comp]
+            tries = sorted(
+                all_candidats,
+                key=lambda n: cle_priorite(
+                    eligibles[n], comp, competitions, centroides, vacances, penalite_km, fn_distance
+                ),
+            )
+            acceptes = tries[:cap]
+            rejetes = tries[cap:]
+
+            # Équipes déplacées de leurs acceptations provisoires
+            for num in set(tentatives[nom_comp]) - set(acceptes):
+                rejete_de[num].add(nom_comp)
+                en_attente.add(num)
+                alertes.append(
+                    f"[DEBUG GS T{tour_num}] Équipe {num} ({eligibles[num].nom}) "
+                    f"déplacée de « {nom_comp} »."
+                )
+
+            # Nouvelles propositions rejetées
+            for num in rejetes:
+                rejete_de[num].add(nom_comp)
+                en_attente.add(num)
+
+            tentatives[nom_comp] = acceptes
+            # Mettre à jour places_restantes pour le calcul de pénibilité
+            # des compétitions suivantes dans la même itération
+            comp.places_restantes = cap - len(acceptes)
+
+    # --- Fallback Tour 1 : équipes ayant épuisé tous leurs vœux ---
+    for num in sans_voeu:
+        equipe = eligibles[num]
+        if tour_num == 1:
+            comp_fallback = _trouver_fallback(equipe, competitions, centroides, fn_distance)
+            if comp_fallback:
+                tentatives[comp_fallback].append(num)
+                competitions[comp_fallback].places_restantes -= 1
+                alertes.append(
+                    f"Équipe {num} ({equipe.nom}) affectée en fallback "
+                    f"à « {comp_fallback} » (aucun vœu disponible)."
+                )
+            else:
+                non_affectes_final.append(num)
+                alertes.append(
+                    f"⚠️ Impossible d'affecter l'équipe {num} ({equipe.nom}) : "
+                    f"toutes les compétitions sont pleines !"
+                )
+        else:
+            non_affectes_final.append(num)
+
+    # --- Finalisation : provisoire → réel ---
+    for nom_comp, accepted in tentatives.items():
+        for num in accepted:
+            equipe = eligibles[num]
+            competitions[nom_comp].equipes_affectees.append(num)
+            equipe.affectations.append(nom_comp)
+            nouvelles_affectations[num] = nom_comp
+
+    # Recalibrer places_restantes sur les affectations réelles
+    for nom, comp in competitions.items():
+        comp.places_restantes = comp.capacite - len(comp.equipes_affectees)
+
+    # --- Vérifications finales Tour 1 ---
+    if tour_num == 1:
+        for num, eq in equipes.items():
+            if not eq.affectations and num not in non_affectes_final:
+                non_affectes_final.append(num)
+                alertes.append(
+                    f"⚠️ Équipe {num} ({eq.nom}) sans compétition après le Tour 1 !"
+                )
+        for nom, comp in competitions.items():
+            if comp.places_restantes < 0:
+                alertes.append(
+                    f"🔴 Erreur : compétition « {nom} » dépasse sa capacité "
+                    f"(places restantes : {comp.places_restantes}) !"
+                )
+
+    metriques = _calculer_metriques(tour_num, equipes, competitions, nouvelles_affectations)
+    return AffectationResult(
+        tour=tour_num,
+        nouvelles_affectations=nouvelles_affectations,
+        non_affectees=non_affectes_final,
+        alertes=alertes,
+        metriques=metriques,
+    )
+
+
 def _calculer_metriques(
     tour_num: int,
     equipes: dict[int, Equipe],
@@ -746,6 +1029,7 @@ def lancer_affectation(
     penalite_km: float = PENALITE_VACANCES_KM,
     nb_tours: int = 3,
     mode_distance: str = "haversine",
+    mode_affectation: str = "glouton",
 ) -> tuple[list[AffectationResult], list[str]]:
     """
     Lance l'affectation complète (jusqu'à nb_tours tours).
@@ -852,6 +1136,7 @@ def lancer_affectation(
             vacances=vacances,
             penalite_km=penalite_km,
             fn_distance=fn_distance,
+            mode_affectation=mode_affectation,
         )
         resultats.append(resultat)
         # Arrêter si aucune nouvelle affectation au tour précédent
