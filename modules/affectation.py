@@ -1,17 +1,17 @@
 """
-Module 2 — Affectation des équipes aux compétitions FTC France.
+Module 2 — Affectation des équipes aux événements FTC France.
 
 Algorithme en 3 tours :
-  Tour 1 : garantit qu'aucune équipe ne reste sans compétition
-  Tour 2 : affecte les 2ᵉ compétitions pour les équipes qui le souhaitent
-  Tour 3 : affecte les 3ᵉ compétitions
+  Tour 1 : garantit qu'aucune équipe ne reste sans événement
+  Tour 2 : affecte les 2ᵉ événements pour les équipes qui le souhaitent
+  Tour 3 : affecte les 3ᵉ événements
 
 Pour chaque place libre, l'algorithme confronte la solidité de TOUTES les
 candidatures et attribue la place à l'équipe avec la plus forte raison.
 
 Critères de priorité (dans cet ordre) :
-  1. Isolement géographique (~300 km+ de la compétition la plus proche)
-  2. Conflit vacances scolaires (compétition la plus proche en vacances)
+  1. Isolement géographique (~300 km+ de l'événement la plus proche)
+  2. Conflit vacances scolaires (événement la plus proche en vacances)
   3. Ratio de pénibilité du repli (ratio élevé = repli proportionnellement coûteux → prioritaire)
   4. Proximité géographique (départage si ratios égaux)
   5. Ordre d'inscription (horodatage)
@@ -62,11 +62,11 @@ class Equipe:
 
 
 @dataclass
-class Competition:
+class Evenement:
     nom: str
     adresse: str
     capacite: int
-    date_competition: date | None
+    date_evenement: date | None
     places_restantes: int
     equipes_affectees: list[int] = field(default_factory=list)
 
@@ -74,8 +74,8 @@ class Competition:
 @dataclass
 class AffectationResult:
     tour: int
-    nouvelles_affectations: dict[int, str]   # {numero_equipe: nom_competition}
-    non_affectees: list[int]                 # équipes sans compétition ce tour
+    nouvelles_affectations: dict[int, str]   # {numero_equipe: nom_evenement}
+    non_affectees: list[int]                 # équipes sans événement ce tour
     alertes: list[str]
     metriques: dict[str, float]
 
@@ -84,20 +84,20 @@ class AffectationResult:
 # Validation des données
 # ---------------------------------------------------------------------------
 
-COLONNES_VOEUX = ["numero_equipe", "nb_competitions_souhaitees", "voeu_1"]
-COLONNES_COMPETITIONS = ["nom_competition", "adresse", "capacite_max"]
+COLONNES_VOEUX = ["numero_equipe", "nb_evenements_souhaitees", "voeu_1"]
+COLONNES_EVENEMENTS = ["nom_evenement", "adresse", "capacite_max"]
 
 
 def valider_voeux(
     voeux_df: pd.DataFrame,
-    competitions_df: pd.DataFrame,
+    evenements_df: pd.DataFrame,
 ) -> list[str]:
     """
     Valide le fichier des vœux. Retourne une liste de messages d'avertissement.
     Ne bloque pas le traitement.
     """
     alertes: list[str] = []
-    noms_comps_valides = set(competitions_df["nom_competition"].str.strip())
+    noms_comps_valides = set(evenements_df["nom_evenement"].str.strip())
 
     for _, ligne in voeux_df.iterrows():
         num = ligne.get("numero_equipe", "?")
@@ -127,20 +127,20 @@ def valider_voeux(
                 "— les doublons seront ignorés."
             )
 
-        # Vérifier que nb_competitions_souhaitees <= nb voeux
-        nb = int(ligne.get("nb_competitions_souhaitees", 1))
+        # Vérifier que nb_evenements_souhaitees <= nb voeux
+        nb = int(ligne.get("nb_evenements_souhaitees", 1))
         if nb > len(set(voeux)):
             alertes.append(
-                f"Équipe {num} : souhaite {nb} compétition(s) mais n'a que "
+                f"Équipe {num} : souhaite {nb} événement(s) mais n'a que "
                 f"{len(set(voeux))} vœu(x) distinct(s)."
             )
 
-        # Vérifier que les noms de compétitions existent
+        # Vérifier que les noms d'événements existent
         for v in voeux:
             if v.strip() not in noms_comps_valides:
                 alertes.append(
-                    f"Équipe {num} : compétition inconnue « {v} ». "
-                    f"Compétitions disponibles : {', '.join(sorted(noms_comps_valides))}"
+                    f"Équipe {num} : événement inconnu « {v} ». "
+                    f"Événements disponibles : {', '.join(sorted(noms_comps_valides))}"
                 )
 
     return alertes
@@ -188,20 +188,20 @@ def construire_equipes(
             code_postal=extraire_code_postal(adresse) if adresse else None,
             zone=adresse_vers_zone(adresse) if adresse else None,
             horodatage=horodatage,
-            nb_souhaite=int(ligne.get("nb_competitions_souhaitees", 1)),
+            nb_souhaite=int(ligne.get("nb_evenements_souhaitees", 1)),
             voeux=voeux,
         )
     return equipes
 
 
-def construire_competitions(
-    competitions_df: pd.DataFrame,
+def construire_evenements(
+    evenements_df: pd.DataFrame,
     saison_vacances: str = "2026_2027",
-) -> dict[str, Competition]:
-    """Construit le dictionnaire {nom: Competition} depuis le DataFrame."""
-    competitions: dict[str, Competition] = {}
-    for _, ligne in competitions_df.iterrows():
-        nom = str(ligne["nom_competition"]).strip()
+) -> dict[str, Evenement]:
+    """Construit le dictionnaire {nom: Evenement} depuis le DataFrame."""
+    evenements: dict[str, Evenement] = {}
+    for _, ligne in evenements_df.iterrows():
+        nom = str(ligne["nom_evenement"]).strip()
         capacite = int(ligne["capacite_max"]) if pd.notna(ligne.get("capacite_max")) else 24
 
         date_comp = None
@@ -211,14 +211,14 @@ def construire_competitions(
             except Exception:
                 pass
 
-        competitions[nom] = Competition(
+        evenements[nom] = Evenement(
             nom=nom,
             adresse=str(ligne["adresse"]).strip(),
             capacite=capacite,
-            date_competition=date_comp,
+            date_evenement=date_comp,
             places_restantes=capacite,
         )
-    return competitions
+    return evenements
 
 
 # ---------------------------------------------------------------------------
@@ -229,33 +229,33 @@ def construire_competitions(
 SEUIL_ISOLATION_KM = 300.0
 
 
-def _distance_min_competitions(
+def _distance_min_evenements(
     equipe: Equipe,
-    competitions: dict[str, Competition],
+    evenements: dict[str, Evenement],
     centroides: dict,
     fn_distance: DistanceFn = distance_entre_adresses,
 ) -> float:
-    """Distance minimale entre l'équipe et n'importe quelle compétition."""
+    """Distance minimale entre l'équipe et n'importe quel événement."""
     if not equipe.adresse:
         return 0.0
     dists = [
-        d for comp in competitions.values()
+        d for comp in evenements.values()
         if (d := fn_distance(equipe.adresse, comp.adresse, centroides)) is not None
     ]
     return min(dists) if dists else float("inf")
 
 
-def _competition_la_plus_proche(
+def _evenement_la_plus_proche(
     equipe: Equipe,
-    competitions: dict[str, Competition],
+    evenements: dict[str, Evenement],
     centroides: dict,
     fn_distance: DistanceFn = distance_entre_adresses,
-) -> Competition | None:
-    """Retourne la compétition géographiquement la plus proche de l'équipe."""
+) -> Evenement | None:
+    """Retourne l'événement géographiquement la plus proche de l'équipe."""
     if not equipe.adresse:
         return None
     best_comp, best_dist = None, float("inf")
-    for comp in competitions.values():
+    for comp in evenements.values():
         d = fn_distance(equipe.adresse, comp.adresse, centroides)
         if d is not None and d < best_dist:
             best_dist, best_comp = d, comp
@@ -264,16 +264,16 @@ def _competition_la_plus_proche(
 
 def calculer_score_alternative(
     equipe: Equipe,
-    competition_cible: Competition,
-    competitions: dict[str, Competition],
+    evenement_cible: Evenement,
+    evenements: dict[str, Evenement],
     centroides: dict,
     vacances: dict | None,
     penalite_km: float = PENALITE_VACANCES_KM,
     fn_distance: DistanceFn = distance_entre_adresses,
 ) -> float:
     """
-    Calcule le score d'alternative de l'équipe pour la compétition cible.
-    Plus le score est élevé, plus l'équipe a besoin de la compétition cible.
+    Calcule le score d'alternative de l'équipe pour l'événement cible.
+    Plus le score est élevé, plus l'équipe a besoin de l'événement cible.
 
     Retourne : distance effective vers la meilleure alternative disponible.
     Si aucune alternative → +∞ (priorité maximale).
@@ -283,9 +283,9 @@ def calculer_score_alternative(
 
     alternatives = [
         nom for nom in equipe.voeux
-        if nom != competition_cible.nom
-        and nom in competitions
-        and competitions[nom].places_restantes > 0
+        if nom != evenement_cible.nom
+        and nom in evenements
+        and evenements[nom].places_restantes > 0
     ]
 
     if not alternatives:
@@ -293,7 +293,7 @@ def calculer_score_alternative(
 
     distances_effectives = []
     for nom_alt in alternatives:
-        comp_alt = competitions[nom_alt]
+        comp_alt = evenements[nom_alt]
         dist = fn_distance(equipe.adresse, comp_alt.adresse, centroides)
         if dist is None:
             dist = float("inf")
@@ -303,8 +303,8 @@ def calculer_score_alternative(
         if (
             vacances is not None
             and equipe.zone is not None
-            and comp_alt.date_competition is not None
-            and est_en_vacances(comp_alt.date_competition, equipe.zone, vacances)
+            and comp_alt.date_evenement is not None
+            and est_en_vacances(comp_alt.date_evenement, equipe.zone, vacances)
         ):
             penalite = penalite_km
 
@@ -326,7 +326,7 @@ def _periodes_vacances_equipe(
 def _equipe_disponible_pendant_vacances(
     equipe: Equipe,
     date_comp: date,
-    competitions: dict[str, Competition],
+    evenements: dict[str, Evenement],
     vacances: dict[str, list[tuple[date, date]]],
 ) -> bool:
     """
@@ -344,13 +344,13 @@ def _equipe_disponible_pendant_vacances(
     if periode_cible is None:
         return False
 
-    # L'équipe a-t-elle voté pour une compétition dans cette même période ?
+    # L'équipe a-t-elle voté pour un événement dans cette même période ?
     for voeu_nom in equipe.voeux:
-        if voeu_nom in competitions:
-            comp_voeu = competitions[voeu_nom]
+        if voeu_nom in evenements:
+            comp_voeu = evenements[voeu_nom]
             if (
-                comp_voeu.date_competition is not None
-                and periode_cible[0] <= comp_voeu.date_competition <= periode_cible[1]
+                comp_voeu.date_evenement is not None
+                and periode_cible[0] <= comp_voeu.date_evenement <= periode_cible[1]
             ):
                 return True
     return False
@@ -358,8 +358,8 @@ def _equipe_disponible_pendant_vacances(
 
 def _calculer_penibilite_repli(
     equipe: Equipe,
-    competition: Competition,
-    competitions: dict[str, Competition],
+    evenement: Evenement,
+    evenements: dict[str, Evenement],
     centroides: dict,
     vacances: dict | None,
     dist_cible: float,
@@ -368,14 +368,14 @@ def _calculer_penibilite_repli(
     """
     Calcule la pénibilité du repli pour le critère 3bis.
 
-    Repli objectif = compétition viable la plus proche, en excluant :
-      a) la compétition disputée
-      b) les compétitions en conflit vacances de l'équipe, SAUF si :
+    Repli objectif = événement viable la plus proche, en excluant :
+      a) l'événement disputé
+      b) les événements en conflit vacances de l'équipe, SAUF si :
          - l'équipe les a incluses dans ses vœux, OU
-         - l'équipe a voté pour une compétition tombant dans la même
+         - l'équipe a voté pour un événement tombant dans la même
            période de vacances (signal de disponibilité)
 
-    Pénibilité = distance(équipe → repli) / distance(équipe → compétition disputée)
+    Pénibilité = distance(équipe → repli) / distance(équipe → événement disputé)
     Ratio > 1 signifie que le repli est plus loin que la cible.
     Plus le ratio est élevé, plus le repli est pénalisant proportionnellement.
     Si dist_cible ≈ 0, on retourne +∞ (l'équipe est sur place, tout repli est pénible).
@@ -386,16 +386,16 @@ def _calculer_penibilite_repli(
 
     meilleure_dist_repli = float("inf")
 
-    for nom, comp in competitions.items():
-        # Exclure la compétition disputée
-        if nom == competition.nom:
+    for nom, comp in evenements.items():
+        # Exclure l'événement disputé
+        if nom == evenement.nom:
             continue
 
-        # Exclure les compétitions déjà affectées à cette équipe (Tours 2+)
+        # Exclure les événements déjà affectées à cette équipe (Tours 2+)
         if nom in equipe.affectations:
             continue
 
-        # Exclure les compétitions pleines (ne sont plus des replis viables)
+        # Exclure les événements pleines (ne sont plus des replis viables)
         if comp.places_restantes <= 0:
             continue
 
@@ -403,19 +403,19 @@ def _calculer_penibilite_repli(
         if (
             vacances is not None
             and equipe.zone is not None
-            and comp.date_competition is not None
-            and est_en_vacances(comp.date_competition, equipe.zone, vacances)
+            and comp.date_evenement is not None
+            and est_en_vacances(comp.date_evenement, equipe.zone, vacances)
         ):
-            # Exception : l'équipe a voté pour cette compétition (signal direct)
+            # Exception : l'équipe a voté pour cet événement (signal direct)
             if nom in equipe.voeux:
                 pass  # disponible, ne pas exclure
             # Exception : l'équipe a voté pour une autre comp dans la même période
             elif _equipe_disponible_pendant_vacances(
-                equipe, comp.date_competition, competitions, vacances
+                equipe, comp.date_evenement, evenements, vacances
             ):
                 pass  # disponible, ne pas exclure
             else:
-                continue  # exclure cette compétition comme repli
+                continue  # exclure cet événement comme repli
 
         dist = fn_distance(equipe.adresse, comp.adresse, centroides)
         if dist is not None and dist < meilleure_dist_repli:
@@ -434,8 +434,8 @@ def _calculer_penibilite_repli(
 
 def cle_priorite(
     equipe: Equipe,
-    competition: Competition,
-    competitions: dict[str, Competition],
+    evenement: Evenement,
+    evenements: dict[str, Evenement],
     centroides: dict,
     vacances: dict | None,
     penalite_km: float = PENALITE_VACANCES_KM,
@@ -448,32 +448,32 @@ def cle_priorite(
       2. Conflit vacances (la comp la plus proche tombe pendant les vacances) → prioritaire
       3. Ratio de pénibilité du repli DESC (ratio le plus élevé = repli le plus
          contraignant proportionnellement → prioritaire)
-      4. Distance à la compétition cible ASC (départage si ratios égaux)
+      4. Distance à l'événement cible ASC (départage si ratios égaux)
       5. Horodatage ASC (départage final)
     """
-    # Critère 1 : équipe isolée si la compétition la plus proche est à >300 km
-    dist_min = _distance_min_competitions(equipe, competitions, centroides, fn_distance)
+    # Critère 1 : équipe isolée si l'événement la plus proche est à >300 km
+    dist_min = _distance_min_evenements(equipe, evenements, centroides, fn_distance)
     is_isolated = dist_min > SEUIL_ISOLATION_KM
 
-    # Critère 2 : la compétition la plus proche tombe pendant les vacances de l'équipe
+    # Critère 2 : l'événement la plus proche tombe pendant les vacances de l'équipe
     has_vacation_conflict = False
     if not is_isolated and vacances is not None and equipe.zone is not None:
-        comp_proche = _competition_la_plus_proche(equipe, competitions, centroides, fn_distance)
+        comp_proche = _evenement_la_plus_proche(equipe, evenements, centroides, fn_distance)
         if (
             comp_proche is not None
-            and comp_proche.date_competition is not None
-            and est_en_vacances(comp_proche.date_competition, equipe.zone, vacances)
+            and comp_proche.date_evenement is not None
+            and est_en_vacances(comp_proche.date_evenement, equipe.zone, vacances)
         ):
             has_vacation_conflict = True
 
-    # Critère 3 : distance à la compétition cible
-    dist_cible = fn_distance(equipe.adresse, competition.adresse, centroides)
+    # Critère 3 : distance à l'événement cible
+    dist_cible = fn_distance(equipe.adresse, evenement.adresse, centroides)
     if dist_cible is None:
         dist_cible = float("inf")
 
     # Critère 3bis : pénibilité du repli (inversé car tri ascendant)
     penibilite = _calculer_penibilite_repli(
-        equipe, competition, competitions, centroides, vacances, dist_cible, fn_distance,
+        equipe, evenement, evenements, centroides, vacances, dist_cible, fn_distance,
     )
 
     # Critère 4 : horodatage
@@ -495,21 +495,21 @@ def cle_priorite(
 # Algorithme d'affectation — un tour
 # ---------------------------------------------------------------------------
 
-def _affecter_a_competition(
+def _affecter_a_evenement(
     equipe: Equipe,
-    nom_competition: str,
-    competitions: dict[str, Competition],
+    nom_evenement: str,
+    evenements: dict[str, Evenement],
 ) -> None:
     """Enregistre l'affectation et décrémente les places restantes."""
-    competitions[nom_competition].places_restantes -= 1
-    competitions[nom_competition].equipes_affectees.append(equipe.numero)
-    equipe.affectations.append(nom_competition)
+    evenements[nom_evenement].places_restantes -= 1
+    evenements[nom_evenement].equipes_affectees.append(equipe.numero)
+    equipe.affectations.append(nom_evenement)
 
 
 def executer_tour(
     tour_num: int,
     equipes: dict[int, Equipe],
-    competitions: dict[str, Competition],
+    evenements: dict[str, Evenement],
     centroides: dict,
     vacances: dict | None,
     penalite_km: float = PENALITE_VACANCES_KM,
@@ -519,9 +519,9 @@ def executer_tour(
     """
     Exécute un tour d'affectation.
 
-    Tour 1 : toutes les équipes (garantit 1 compétition chacune)
-    Tour 2 : équipes souhaitant ≥ 2 compétitions
-    Tour 3 : équipes souhaitant ≥ 3 compétitions
+    Tour 1 : toutes les équipes (garantit 1 événement chacune)
+    Tour 2 : équipes souhaitant ≥ 2 événements
+    Tour 3 : équipes souhaitant ≥ 3 événements
 
     mode_affectation :
       "glouton"      — Phase A verrouillée, Phase B ne prend que les places libres.
@@ -531,7 +531,7 @@ def executer_tour(
     """
     if mode_affectation == "gale_shapley":
         return _executer_tour_gs(
-            tour_num, equipes, competitions, centroides, vacances, penalite_km, fn_distance
+            tour_num, equipes, evenements, centroides, vacances, penalite_km, fn_distance
         )
 
     alertes: list[str] = []
@@ -550,8 +550,8 @@ def executer_tour(
     # -----------------------------------------------------------------------
     # Phase A : Affecter par vœu de rang `tour_num` (voeu_1 pour tour 1, etc.)
     # -----------------------------------------------------------------------
-    # Regrouper les demandeurs par compétition pour leur vœu de rang `tour_num`
-    demandeurs_par_comp: dict[str, list[Equipe]] = {nom: [] for nom in competitions}
+    # Regrouper les demandeurs par événement pour leur vœu de rang `tour_num`
+    demandeurs_par_comp: dict[str, list[Equipe]] = {nom: [] for nom in evenements}
 
     numeros_dans_demandeurs: set[int] = set()
     for equipe in eligibles.values():
@@ -567,14 +567,14 @@ def executer_tour(
             demandeurs_par_comp[voeu_principal].append(equipe)
             numeros_dans_demandeurs.add(equipe.numero)
 
-    # Trier les compétitions par demande décroissante (plus sur-souscrites d'abord)
+    # Trier les événements par demande décroissante (plus sur-souscrites d'abord)
     comps_triees = sorted(
-        competitions.keys(),
+        evenements.keys(),
         key=lambda nom: len(demandeurs_par_comp[nom]),
         reverse=True,
     )
 
-    # Équipes dont le 1er vœu restant ne correspond à aucune compétition connue
+    # Équipes dont le 1er vœu restant ne correspond à aucun événement connue
     # → directement en Phase B pour tentative sur les vœux suivants ou fallback
     non_affectes_phase_a: list[Equipe] = [
         eq for eq in eligibles.values()
@@ -583,12 +583,12 @@ def executer_tour(
     ]
 
     for nom_comp in comps_triees:
-        comp = competitions[nom_comp]
+        comp = evenements[nom_comp]
         demandeurs = demandeurs_par_comp[nom_comp]
         if not demandeurs:
             continue
 
-        # Trace Phase A pour chaque compétition avec demandeurs
+        # Trace Phase A pour chaque événement avec demandeurs
         alertes.append(
             f"[DEBUG T{tour_num}] Phase A — {repr(nom_comp)} : "
             f"{len(demandeurs)} demandeur(s) / {comp.places_restantes} place(s) restante(s)."
@@ -597,17 +597,17 @@ def executer_tour(
         if len(demandeurs) <= comp.places_restantes:
             # Tout le monde passe
             for eq in demandeurs:
-                _affecter_a_competition(eq, nom_comp, competitions)
+                _affecter_a_evenement(eq, nom_comp, evenements)
                 nouvelles_affectations[eq.numero] = nom_comp
         else:
             # Sur-souscription : trier par priorité
             demandeurs_tries = sorted(
                 demandeurs,
-                key=lambda eq: cle_priorite(eq, comp, competitions, centroides, vacances, penalite_km, fn_distance),
+                key=lambda eq: cle_priorite(eq, comp, evenements, centroides, vacances, penalite_km, fn_distance),
             )
             nb_places = comp.places_restantes  # snapshot avant modification
             for eq in demandeurs_tries[:nb_places]:
-                _affecter_a_competition(eq, nom_comp, competitions)
+                _affecter_a_evenement(eq, nom_comp, evenements)
                 nouvelles_affectations[eq.numero] = nom_comp
             for eq in demandeurs_tries[nb_places:]:
                 non_affectes_phase_a.append(eq)
@@ -622,27 +622,27 @@ def executer_tour(
     for equipe in non_affectes_phase_a:
         voeux_restants = [
             v for v in equipe.voeux
-            if v not in equipe.affectations and v in competitions
+            if v not in equipe.affectations and v in evenements
         ]
 
         affecte = False
         for voeu in voeux_restants:
-            comp = competitions[voeu]
+            comp = evenements[voeu]
             if comp.places_restantes > 0:
-                _affecter_a_competition(equipe, voeu, competitions)
+                _affecter_a_evenement(equipe, voeu, evenements)
                 nouvelles_affectations[equipe.numero] = voeu
                 affecte = True
                 break
             elif mode_affectation == "displacement":
                 plus_faible = _trouver_plus_faible_occupant(
-                    comp, equipes, competitions, centroides, vacances, penalite_km, fn_distance
+                    comp, equipes, evenements, centroides, vacances, penalite_km, fn_distance
                 )
                 if plus_faible is not None:
                     cle_entrant = cle_priorite(
-                        equipe, comp, competitions, centroides, vacances, penalite_km, fn_distance
+                        equipe, comp, evenements, centroides, vacances, penalite_km, fn_distance
                     )
                     cle_occup = cle_priorite(
-                        plus_faible, comp, competitions, centroides, vacances, penalite_km, fn_distance
+                        plus_faible, comp, evenements, centroides, vacances, penalite_km, fn_distance
                     )
                     if cle_entrant < cle_occup:
                         # Désaffecter le plus faible
@@ -652,7 +652,7 @@ def executer_tour(
                         if nouvelles_affectations.get(plus_faible.numero) == voeu:
                             del nouvelles_affectations[plus_faible.numero]
                         # Affecter l'entrant
-                        _affecter_a_competition(equipe, voeu, competitions)
+                        _affecter_a_evenement(equipe, voeu, evenements)
                         nouvelles_affectations[equipe.numero] = voeu
                         deplaces.append((plus_faible, voeu))
                         alertes.append(
@@ -665,10 +665,10 @@ def executer_tour(
 
         if not affecte:
             if tour_num == 1:
-                # Fallback obligatoire pour le Tour 1 : compétition avec le plus de places
-                comp_fallback = _trouver_fallback(equipe, competitions, centroides, fn_distance)
+                # Fallback obligatoire pour le Tour 1 : événement avec le plus de places
+                comp_fallback = _trouver_fallback(equipe, evenements, centroides, fn_distance)
                 if comp_fallback:
-                    _affecter_a_competition(equipe, comp_fallback, competitions)
+                    _affecter_a_evenement(equipe, comp_fallback, evenements)
                     nouvelles_affectations[equipe.numero] = comp_fallback
                     alertes.append(
                         f"Équipe {equipe.numero} ({equipe.nom}) affectée en fallback "
@@ -678,7 +678,7 @@ def executer_tour(
                     non_affectes_final.append(equipe.numero)
                     alertes.append(
                         f"⚠️ Impossible d'affecter l'équipe {equipe.numero} "
-                        f"({equipe.nom}) : toutes les compétitions sont pleines !"
+                        f"({equipe.nom}) : tous les événements sont pleins !"
                     )
             else:
                 # Tours 2 & 3 : pas d'obligation, on signale juste
@@ -688,21 +688,21 @@ def executer_tour(
     for equipe, comp_source in deplaces:
         voeux_restants = [
             v for v in equipe.voeux
-            if v not in equipe.affectations and v in competitions and v != comp_source
+            if v not in equipe.affectations and v in evenements and v != comp_source
         ]
         affecte = False
         for voeu in voeux_restants:
-            comp = competitions[voeu]
+            comp = evenements[voeu]
             if comp.places_restantes > 0:
-                _affecter_a_competition(equipe, voeu, competitions)
+                _affecter_a_evenement(equipe, voeu, evenements)
                 nouvelles_affectations[equipe.numero] = voeu
                 affecte = True
                 break
         if not affecte:
             if tour_num == 1:
-                comp_fallback = _trouver_fallback(equipe, competitions, centroides, fn_distance)
+                comp_fallback = _trouver_fallback(equipe, evenements, centroides, fn_distance)
                 if comp_fallback:
-                    _affecter_a_competition(equipe, comp_fallback, competitions)
+                    _affecter_a_evenement(equipe, comp_fallback, evenements)
                     nouvelles_affectations[equipe.numero] = comp_fallback
                     alertes.append(
                         f"Équipe {equipe.numero} ({equipe.nom}) déplacée puis affectée "
@@ -726,19 +726,19 @@ def executer_tour(
                 if num not in non_affectes_final:
                     non_affectes_final.append(num)
                     alertes.append(
-                        f"⚠️ Équipe {num} ({eq.nom}) sans compétition après le Tour 1 !"
+                        f"⚠️ Équipe {num} ({eq.nom}) sans événement après le Tour 1 !"
                     )
-        for nom, comp in competitions.items():
+        for nom, comp in evenements.items():
             if comp.places_restantes < 0:
                 alertes.append(
-                    f"🔴 Erreur : compétition « {nom} » dépasse sa capacité "
+                    f"🔴 Erreur : événement « {nom} » dépasse sa capacité "
                     f"(places restantes : {comp.places_restantes}) !"
                 )
 
     # -----------------------------------------------------------------------
     # Métriques
     # -----------------------------------------------------------------------
-    metriques = _calculer_metriques(tour_num, equipes, competitions, nouvelles_affectations)
+    metriques = _calculer_metriques(tour_num, equipes, evenements, nouvelles_affectations)
 
     return AffectationResult(
         tour=tour_num,
@@ -751,16 +751,16 @@ def executer_tour(
 
 def _trouver_fallback(
     equipe: Equipe,
-    competitions: dict[str, Competition],
+    evenements: dict[str, Evenement],
     centroides: dict,
     fn_distance: DistanceFn = distance_entre_adresses,
 ) -> str | None:
     """
-    Fallback Tour 1 : renvoie la compétition avec le plus de places restantes.
+    Fallback Tour 1 : renvoie l'événement avec le plus de places restantes.
     Tie-break : la plus proche géographiquement.
     """
     candidates = [
-        comp for comp in competitions.values()
+        comp for comp in evenements.values()
         if comp.places_restantes > 0
         and comp.nom not in equipe.affectations
     ]
@@ -774,7 +774,7 @@ def _trouver_fallback(
         return avec_max[0].nom
 
     # Tie-break géographique
-    def dist_comp(comp: Competition) -> float:
+    def dist_comp(comp: Evenement) -> float:
         d = fn_distance(equipe.adresse, comp.adresse, centroides)
         return d if d is not None else float("inf")
 
@@ -782,26 +782,26 @@ def _trouver_fallback(
 
 
 def _trouver_plus_faible_occupant(
-    competition: Competition,
+    evenement: Evenement,
     equipes: dict[int, Equipe],
-    competitions: dict[str, Competition],
+    evenements: dict[str, Evenement],
     centroides: dict,
     vacances: dict | None,
     penalite_km: float,
     fn_distance: DistanceFn,
 ) -> Equipe | None:
     """
-    Retourne l'occupant actuel de la compétition avec le claim le plus faible
+    Retourne l'occupant actuel de l'événement avec le claim le plus faible
     (clé de priorité la plus haute dans le tri ascendant).
     Utilisé par le mode displacement pour identifier qui peut être déplacé.
     """
-    occupants = [equipes[num] for num in competition.equipes_affectees if num in equipes]
+    occupants = [equipes[num] for num in evenement.equipes_affectees if num in equipes]
     if not occupants:
         return None
     return max(
         occupants,
         key=lambda eq: cle_priorite(
-            eq, competition, competitions, centroides, vacances, penalite_km, fn_distance
+            eq, evenement, evenements, centroides, vacances, penalite_km, fn_distance
         ),
     )
 
@@ -809,7 +809,7 @@ def _trouver_plus_faible_occupant(
 def _executer_tour_gs(
     tour_num: int,
     equipes: dict[int, Equipe],
-    competitions: dict[str, Competition],
+    evenements: dict[str, Evenement],
     centroides: dict,
     vacances: dict | None,
     penalite_km: float,
@@ -820,18 +820,18 @@ def _executer_tour_gs(
 
     Principe :
       1. Chaque équipe propose à son meilleur vœu non encore rejeté.
-      2. Chaque compétition évalue provisoirement toutes les propositions reçues
+      2. Chaque événement évalue provisoirement toutes les propositions reçues
          (nouvelles + acceptations provisoires existantes) et conserve les N
          meilleurs claims ; les autres sont rejetés et proposent au vœu suivant.
       3. On répète jusqu'à convergence (plus aucun rejet).
 
     Garanties :
-      - Stable : aucune paire (équipe, compétition) mutuellement préférable ne
+      - Stable : aucune paire (équipe, événement) mutuellement préférable ne
         subsiste à la convergence.
       - Terminaison : O(n × m) itérations max (chaque équipe ne propose qu'une
-        fois à chaque compétition).
+        fois à chaque événement).
       - Déterministe : l'ordre de traitement n'influe pas sur le résultat final.
-      - La pénibilité est réévaluée dynamiquement : une compétition provisoirement
+      - La pénibilité est réévaluée dynamiquement : un événement provisoirement
         pleine est exclue du calcul de repli (via places_restantes mis à jour
         après chaque réévaluation).
     """
@@ -852,35 +852,35 @@ def _executer_tour_gs(
             nouvelles_affectations={},
             non_affectees=[],
             alertes=alertes,
-            metriques=_calculer_metriques(tour_num, equipes, competitions, {}),
+            metriques=_calculer_metriques(tour_num, equipes, evenements, {}),
         )
 
     # Capacité disponible au début de ce tour (tient compte des tours précédents)
     capacite_dispo: dict[str, int] = {
-        nom: comp.places_restantes for nom, comp in competitions.items()
+        nom: comp.places_restantes for nom, comp in evenements.items()
     }
 
     # Acceptations provisoires pour ce tour {nom_comp: [num_equipe, ...]}
-    tentatives: dict[str, list[int]] = {nom: [] for nom in competitions}
-    # Compétitions déjà rejetées par chaque équipe (ne plus proposer)
+    tentatives: dict[str, list[int]] = {nom: [] for nom in evenements}
+    # Événements déjà rejetées par chaque équipe (ne plus proposer)
     rejete_de: dict[int, set[str]] = {num: set() for num in eligibles}
     # Équipes en attente de faire une proposition
     en_attente: set[int] = set(eligibles.keys())
 
     # Borne de terminaison : n×m propositions maximum
-    for _ in range(len(eligibles) * len(competitions) + 1):
+    for _ in range(len(eligibles) * len(evenements) + 1):
         if not en_attente:
             break
 
         # --- Collecte des propositions ---
-        propositions: dict[str, list[int]] = {nom: [] for nom in competitions}
+        propositions: dict[str, list[int]] = {nom: [] for nom in evenements}
         sans_voeu: list[int] = []
 
         for num in list(en_attente):
             equipe = eligibles[num]
             voeux_eligibles = [
                 v for v in equipe.voeux
-                if v in competitions
+                if v in evenements
                 and v not in equipe.affectations
                 and v not in rejete_de[num]
             ]
@@ -891,8 +891,8 @@ def _executer_tour_gs(
             propositions[voeux_eligibles[0]].append(num)
             en_attente.discard(num)
 
-        # --- Évaluation par compétition ---
-        for nom_comp, comp in competitions.items():
+        # --- Évaluation par événement ---
+        for nom_comp, comp in evenements.items():
             all_candidats = list(set(tentatives[nom_comp] + propositions[nom_comp]))
             if not all_candidats:
                 continue
@@ -901,7 +901,7 @@ def _executer_tour_gs(
             tries = sorted(
                 all_candidats,
                 key=lambda n: cle_priorite(
-                    eligibles[n], comp, competitions, centroides, vacances, penalite_km, fn_distance
+                    eligibles[n], comp, evenements, centroides, vacances, penalite_km, fn_distance
                 ),
             )
             acceptes = tries[:cap]
@@ -923,17 +923,17 @@ def _executer_tour_gs(
 
             tentatives[nom_comp] = acceptes
             # Mettre à jour places_restantes pour le calcul de pénibilité
-            # des compétitions suivantes dans la même itération
+            # des événements suivantes dans la même itération
             comp.places_restantes = cap - len(acceptes)
 
     # --- Fallback Tour 1 : équipes ayant épuisé tous leurs vœux ---
     for num in sans_voeu:
         equipe = eligibles[num]
         if tour_num == 1:
-            comp_fallback = _trouver_fallback(equipe, competitions, centroides, fn_distance)
+            comp_fallback = _trouver_fallback(equipe, evenements, centroides, fn_distance)
             if comp_fallback:
                 tentatives[comp_fallback].append(num)
-                competitions[comp_fallback].places_restantes -= 1
+                evenements[comp_fallback].places_restantes -= 1
                 alertes.append(
                     f"Équipe {num} ({equipe.nom}) affectée en fallback "
                     f"à « {comp_fallback} » (aucun vœu disponible)."
@@ -942,7 +942,7 @@ def _executer_tour_gs(
                 non_affectes_final.append(num)
                 alertes.append(
                     f"⚠️ Impossible d'affecter l'équipe {num} ({equipe.nom}) : "
-                    f"toutes les compétitions sont pleines !"
+                    f"tous les événements sont pleins !"
                 )
         else:
             non_affectes_final.append(num)
@@ -951,12 +951,12 @@ def _executer_tour_gs(
     for nom_comp, accepted in tentatives.items():
         for num in accepted:
             equipe = eligibles[num]
-            competitions[nom_comp].equipes_affectees.append(num)
+            evenements[nom_comp].equipes_affectees.append(num)
             equipe.affectations.append(nom_comp)
             nouvelles_affectations[num] = nom_comp
 
     # Recalibrer places_restantes sur les affectations réelles
-    for nom, comp in competitions.items():
+    for nom, comp in evenements.items():
         comp.places_restantes = comp.capacite - len(comp.equipes_affectees)
 
     # --- Vérifications finales Tour 1 ---
@@ -965,16 +965,16 @@ def _executer_tour_gs(
             if not eq.affectations and num not in non_affectes_final:
                 non_affectes_final.append(num)
                 alertes.append(
-                    f"⚠️ Équipe {num} ({eq.nom}) sans compétition après le Tour 1 !"
+                    f"⚠️ Équipe {num} ({eq.nom}) sans événement après le Tour 1 !"
                 )
-        for nom, comp in competitions.items():
+        for nom, comp in evenements.items():
             if comp.places_restantes < 0:
                 alertes.append(
-                    f"🔴 Erreur : compétition « {nom} » dépasse sa capacité "
+                    f"🔴 Erreur : événement « {nom} » dépasse sa capacité "
                     f"(places restantes : {comp.places_restantes}) !"
                 )
 
-    metriques = _calculer_metriques(tour_num, equipes, competitions, nouvelles_affectations)
+    metriques = _calculer_metriques(tour_num, equipes, evenements, nouvelles_affectations)
     return AffectationResult(
         tour=tour_num,
         nouvelles_affectations=nouvelles_affectations,
@@ -987,7 +987,7 @@ def _executer_tour_gs(
 def _calculer_metriques(
     tour_num: int,
     equipes: dict[int, Equipe],
-    competitions: dict[str, Competition],
+    evenements: dict[str, Evenement],
     nouvelles_affectations: dict[int, str],
 ) -> dict[str, float]:
     """Calcule les métriques de qualité pour le tour courant."""
@@ -1008,7 +1008,7 @@ def _calculer_metriques(
 
     metriques["nb_affectations_tour"] = float(len(nouvelles_affectations))
 
-    for nom, comp in competitions.items():
+    for nom, comp in evenements.items():
         cle = f"remplissage_{nom[:20]}"
         metriques[cle] = round(
             (comp.capacite - comp.places_restantes) / comp.capacite * 100, 1
@@ -1023,7 +1023,7 @@ def _calculer_metriques(
 
 def lancer_affectation(
     voeux_df: pd.DataFrame,
-    competitions_df: pd.DataFrame,
+    evenements_df: pd.DataFrame,
     equipes_df: pd.DataFrame | None = None,
     saison_vacances: str = "2026_2027",
     penalite_km: float = PENALITE_VACANCES_KM,
@@ -1049,7 +1049,7 @@ def lancer_affectation(
             voeux_df["numero_equipe"].astype(str)
         )
 
-    alertes_validation = valider_voeux(voeux_df, competitions_df)
+    alertes_validation = valider_voeux(voeux_df, evenements_df)
 
     centroides = charger_centroides()
 
@@ -1064,7 +1064,7 @@ def lancer_affectation(
             adr_equipes = equipes_df[col_adr].dropna().astype(str).tolist()
         elif col_adr in voeux_df.columns:
             adr_equipes = voeux_df[col_adr].dropna().astype(str).tolist()
-        adr_comps = competitions_df["adresse"].dropna().astype(str).tolist()
+        adr_comps = evenements_df["adresse"].dropna().astype(str).tolist()
         fn_distance = creer_fn_distance_osrm(centroides, adr_equipes, adr_comps)
     else:
         fn_distance = distance_entre_adresses
@@ -1079,9 +1079,9 @@ def lancer_affectation(
         )
 
     equipes = construire_equipes(voeux_df)
-    competitions = construire_competitions(competitions_df, saison_vacances)
+    evenements = construire_evenements(evenements_df, saison_vacances)
 
-    # Normalisation des noms de vœux vers les noms officiels des compétitions.
+    # Normalisation des noms de vœux vers les noms officiels des événements.
     # Gère les différences de casse, d'accents, d'espaces, de tirets, et
     # d'encodage unicode (NFC vs NFD).
 
@@ -1096,16 +1096,16 @@ def lancer_affectation(
         return s.strip().lower()
 
     noms_comp_lower: dict[str, str] = {
-        nom.strip().lower(): nom for nom in competitions
+        nom.strip().lower(): nom for nom in evenements
     }
     noms_comp_normalise: dict[str, str] = {
-        _normaliser(nom): nom for nom in competitions
+        _normaliser(nom): nom for nom in evenements
     }
 
     for equipe in equipes.values():
         voeux_corriges = []
         for v in equipe.voeux:
-            if v in competitions:
+            if v in evenements:
                 # Correspondance exacte
                 voeux_corriges.append(v)
             elif v.strip().lower() in noms_comp_lower:
@@ -1119,7 +1119,7 @@ def lancer_affectation(
         equipe.voeux = voeux_corriges
 
     # Vérification capacité globale
-    total_capacite = sum(c.capacite for c in competitions.values())
+    total_capacite = sum(c.capacite for c in evenements.values())
     if len(equipes) > total_capacite:
         alertes_validation.append(
             f"⚠️ Capacité totale ({total_capacite}) inférieure au nombre d'équipes "
@@ -1131,7 +1131,7 @@ def lancer_affectation(
         resultat = executer_tour(
             tour_num=tour,
             equipes=equipes,
-            competitions=competitions,
+            evenements=evenements,
             centroides=centroides,
             vacances=vacances,
             penalite_km=penalite_km,
@@ -1153,13 +1153,13 @@ def lancer_affectation(
 def resultats_vers_dataframes(
     resultats: list[AffectationResult],
     equipes: dict[int, "Equipe"],
-    competitions: dict[str, "Competition"],
+    evenements: dict[str, "Evenement"],
 ) -> dict[str, pd.DataFrame]:
     """
     Génère les DataFrames pour l'export Excel multi-feuilles :
     - "Résumé" : toutes les affectations par équipe
-    - "Par compétition" : une entrée par compétition
-    - Un onglet par compétition
+    - "Par événement" : une entrée par événement
+    - Un onglet par événement
     - "Non_affectées"
     - "Métriques"
     """
@@ -1173,12 +1173,12 @@ def resultats_vers_dataframes(
                 "Numéro équipe": num,
                 "Nom équipe": eq.nom,
                 "Tour": i,
-                "Compétition": nom_comp,
+                "Événement": nom_comp,
             })
     sheets["Résumé"] = pd.DataFrame(lignes_resume)
 
-    # Par compétition
-    for nom_comp, comp in competitions.items():
+    # Par événement
+    for nom_comp, comp in evenements.items():
         lignes_comp = []
         for num in comp.equipes_affectees:
             eq = equipes.get(num)

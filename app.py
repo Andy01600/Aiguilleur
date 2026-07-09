@@ -18,7 +18,7 @@ from modules.affectation import lancer_affectation
 from modules.planning import (
     generer_planning,
     planning_vers_dataframe,
-    planning_vers_fichier_competitions,
+    planning_vers_fichier_evenements,
 )
 from utils.helpers import (
     PENALITE_VACANCES_KM,
@@ -66,7 +66,7 @@ def page_accueil():
     st.title("🤖 L'Aiguilleur — Planification FTC France")
     st.markdown(
         """
-        Bienvenue dans **l'Aiguilleur**, l'outil de planification des compétitions
+        Bienvenue dans **l'Aiguilleur**, l'outil de planification des événements
         **FIRST Tech Challenge (FTC) France** pour la saison 2025-2026 / 2026-2027.
 
         ---
@@ -74,11 +74,11 @@ def page_accueil():
         ## Modules disponibles
 
         ### 📅 Module 1 — Planification
-        Génère un calendrier de compétitions qui minimise les conflits avec les
+        Génère un calendrier d'événements qui minimise les conflits avec les
         vacances scolaires françaises et maximise les samedis consécutifs.
 
         ### 🏆 Module 2 — Affectation
-        Répartit les équipes dans les compétitions selon leurs vœux, en respectant
+        Répartit les équipes dans les événements selon leurs vœux, en respectant
         les capacités et en priorisant les équipes qui ont le moins d'alternatives.
 
         ---
@@ -89,8 +89,8 @@ def page_accueil():
     col1, col2, col3, col4 = st.columns(4)
     templates = {
         "Équipes": "data/templates/equipes_2025_2026.csv",
-        "Compétitions": "data/templates/competitions_2026_2027.csv",
-        "Compétitions avec dates": "data/templates/competitions_avec_dates_template.csv",
+        "Événements": "data/templates/evenements_2026_2027.csv",
+        "Événements avec dates": "data/templates/evenements_avec_dates_template.csv",
         "Vœux": "data/templates/voeux_2025_2026.csv",
     }
     for (nom, chemin), col in zip(templates.items(), [col1, col2, col3, col4]):
@@ -182,16 +182,16 @@ def _afficher_reference_vacances(saison: str):
                 lignes.append(row)
             st.dataframe(pd.DataFrame(lignes), use_container_width=True, hide_index=True)
 
-def _afficher_calendrier_planning(result, competitions_df):
-    """Affiche le calendrier des compétitions avec coloration par impact vacances."""
+def _afficher_calendrier_planning(result, evenements_df):
+    """Affiche le calendrier des événements avec coloration par impact vacances."""
     if not result.dates:
         return
 
-    comps_index = competitions_df.set_index("nom_competition")
+    comps_index = evenements_df.set_index("nom_evenement")
 
     date_to_info = {}
     for det in result.detail_par_date:
-        nom = det["competition"]
+        nom = det["evenement"]
         sv = det["score_vacances"]
         cap = int(comps_index.loc[nom, "capacite_max"]) if nom in comps_index.index else 24
         nb_imp = len(det.get("equipes_impactees", []))
@@ -270,7 +270,7 @@ def _afficher_calendrier_planning(result, competitions_df):
 
 
 def page_planification():
-    st.title("📅 Module 1 — Planification des compétitions")
+    st.title("📅 Module 1 — Planification des événements")
 
     col_sais, _ = st.columns([1, 2])
     with col_sais:
@@ -289,7 +289,7 @@ def page_planification():
         st.subheader("Paramètres")
 
         fichier_comps = st.file_uploader(
-            "Fichier compétitions (CSV/Excel)",
+            "Fichier événements (CSV/Excel)",
             type=["csv", "xlsx"],
             key="planning_comps",
         )
@@ -321,26 +321,26 @@ def page_planification():
             max_value=1.0,
             value=0.1,
             step=0.05,
-            help="Coefficient de pénalité pour les samedis libres entre compétitions.",
+            help="Coefficient de pénalité pour les samedis libres entre événements.",
         )
 
         lancer = st.button("🚀 Générer le planning", type="primary", use_container_width=True)
 
     with col_resultats:
         if not fichier_comps and not lancer:
-            st.info("Chargez un fichier de compétitions et cliquez sur « Générer ».")
+            st.info("Chargez un fichier d'événements et cliquez sur « Générer ».")
             return
 
         # Lecture des fichiers
         try:
             if fichier_comps:
-                competitions_df = lire_fichier(
+                evenements_df = lire_fichier(
                     fichier_comps,
-                    ["nom_competition", "adresse", "capacite_max"],
-                    "fichier compétitions",
+                    ["nom_evenement", "adresse", "capacite_max"],
+                    "fichier événements",
                 )
-                st.subheader("Compétitions chargées")
-                st.dataframe(competitions_df, use_container_width=True)
+                st.subheader("Événements chargées")
+                st.dataframe(evenements_df, use_container_width=True)
         except ValueError as e:
             st.error(str(e))
             return
@@ -360,7 +360,7 @@ def page_planification():
             with st.spinner("Calcul du planning en cours…"):
                 try:
                     result = generer_planning(
-                        competitions_df=competitions_df,
+                        evenements_df=evenements_df,
                         equipes_df=equipes_df,
                         fenetre_debut=debut,
                         fenetre_fin=fin,
@@ -391,21 +391,21 @@ def page_planification():
 
             # Calendrier
             st.subheader("Calendrier")
-            _afficher_calendrier_planning(result, competitions_df)
+            _afficher_calendrier_planning(result, evenements_df)
 
             # Tableau des résultats
             st.subheader("Détail")
             df_planning = planning_vers_dataframe(result)
             st.dataframe(df_planning, use_container_width=True)
 
-            # Détail des équipes potentiellement impactées par compétition
+            # Détail des équipes potentiellement impactées par événement
             equipes_chargees = equipes_df is not None and not equipes_df.empty
             has_impactes = equipes_chargees and any(
                 d.get("equipes_impactees") for d in result.detail_par_date
             )
             if equipes_chargees:
                 label_expander = (
-                    "🔍 Équipes potentiellement impactées par compétition"
+                    "🔍 Équipes potentiellement impactées par événement"
                     if has_impactes
                     else "✅ Aucune équipe impactée par les vacances"
                 )
@@ -416,7 +416,7 @@ def page_planification():
                         if equipes_imp:
                             zones_str = ", ".join(det["zones_impactees"])
                             st.markdown(
-                                f"**{det['competition']}** ({date_str}) "
+                                f"**{det['evenement']}** ({date_str}) "
                                 f"— zones {zones_str} en vacances "
                                 f"— **{len(equipes_imp)} équipe(s) impactée(s)**"
                             )
@@ -427,13 +427,13 @@ def page_planification():
                             )
                         else:
                             st.markdown(
-                                f"**{det['competition']}** ({date_str}) — ✅ Aucune équipe impactée"
+                                f"**{det['evenement']}** ({date_str}) — ✅ Aucune équipe impactée"
                             )
 
             # Export Excel (vue lisible)
             sheets = {
                 "Planning": df_planning,
-                "Compétitions": competitions_df,
+                "Événements": evenements_df,
             }
             excel_bytes = exporter_excel(sheets)
             st.download_button(
@@ -444,11 +444,11 @@ def page_planification():
             )
 
             # Export CSV compatible Module 2
-            df_comps_avec_dates = planning_vers_fichier_competitions(result, competitions_df)
+            df_comps_avec_dates = planning_vers_fichier_evenements(result, evenements_df)
             st.download_button(
-                label="📥 Télécharger le fichier compétitions pour le Module 2 (CSV)",
+                label="📥 Télécharger le fichier événements pour le Module 2 (CSV)",
                 data=df_comps_avec_dates.to_csv(index=False, sep=";").encode("utf-8"),
-                file_name="competitions_avec_dates.csv",
+                file_name="evenements_avec_dates.csv",
                 mime="text/csv",
                 help="Ce fichier peut être utilisé directement comme entrée du Module Affectation.",
             )
@@ -458,10 +458,10 @@ def page_planification():
 # Page Affectation (Module 2)
 # ---------------------------------------------------------------------------
 
-def _diagnostiquer_noms(voeux_df: pd.DataFrame, competitions_df: pd.DataFrame) -> None:
+def _diagnostiquer_noms(voeux_df: pd.DataFrame, evenements_df: pd.DataFrame) -> None:
     """
-    Affiche un diagnostic de correspondance entre les noms de compétitions
-    dans le fichier compétitions et dans les vœux.
+    Affiche un diagnostic de correspondance entre les noms d'événements
+    dans le fichier événements et dans les vœux.
     Révèle les caractères invisibles, différences d'encodage, etc.
     """
     import unicodedata as _uc
@@ -473,10 +473,10 @@ def _diagnostiquer_noms(voeux_df: pd.DataFrame, competitions_df: pd.DataFrame) -
         s = _re.sub(r"[\s\-_']+", " ", s)
         return s.strip().lower()
 
-    noms_comps = [str(n).strip() for n in competitions_df["nom_competition"] if pd.notna(n)]
+    noms_comps = [str(n).strip() for n in evenements_df["nom_evenement"] if pd.notna(n)]
     voeu_cols = [c for c in voeux_df.columns if c.startswith("voeu_")]
 
-    # Compter les voeux par compétition (exact match sur la valeur brute)
+    # Compter les voeux par événement (exact match sur la valeur brute)
     voeux_plats = []
     for _, row in voeux_df.iterrows():
         for c in voeu_cols:
@@ -486,8 +486,8 @@ def _diagnostiquer_noms(voeux_df: pd.DataFrame, competitions_df: pd.DataFrame) -
 
     voeux_uniques = sorted(set(voeux_plats))
 
-    # Table compétitions
-    st.markdown("**Noms de compétitions (fichier compétitions) :**")
+    # Table événements
+    st.markdown("**Noms d'événements (fichier événements) :**")
     rows_comp = []
     for nom in noms_comps:
         exact_count = sum(1 for v in voeux_plats if v == nom)
@@ -499,7 +499,7 @@ def _diagnostiquer_noms(voeux_df: pd.DataFrame, competitions_df: pd.DataFrame) -
         })
     st.dataframe(pd.DataFrame(rows_comp), use_container_width=True)
 
-    # Noms de compétitions présents dans les vœux mais pas dans le fichier
+    # Noms d'événements présents dans les vœux mais pas dans le fichier
     noms_comps_set = set(noms_comps)
     noms_comps_norm = {_normaliser(n): n for n in noms_comps}
     inconnus = []
@@ -512,10 +512,10 @@ def _diagnostiquer_noms(voeux_df: pd.DataFrame, competitions_df: pd.DataFrame) -
                 "Correspondance normalisée": match_norm or "❌ Aucune",
             })
     if inconnus:
-        st.warning(f"⚠️ {len(inconnus)} valeur(s) de vœux sans correspondance exacte dans le fichier compétitions :")
+        st.warning(f"⚠️ {len(inconnus)} valeur(s) de vœux sans correspondance exacte dans le fichier événements :")
         st.dataframe(pd.DataFrame(inconnus), use_container_width=True)
     else:
-        st.success("✅ Tous les noms de vœux correspondent exactement à une compétition.")
+        st.success("✅ Tous les noms de vœux correspondent exactement à un événement.")
 
 
 def page_affectation():
@@ -526,8 +526,8 @@ def page_affectation():
         st.session_state.affectation_resultats = []
     if "affectation_equipes" not in st.session_state:
         st.session_state.affectation_equipes = None
-    if "affectation_competitions" not in st.session_state:
-        st.session_state.affectation_competitions = None
+    if "affectation_evenements" not in st.session_state:
+        st.session_state.affectation_evenements = None
     if "affectation_tour_actuel" not in st.session_state:
         st.session_state.affectation_tour_actuel = 0
     if "affectation_mode_affectation" not in st.session_state:
@@ -544,7 +544,7 @@ def page_affectation():
             key="aff_voeux",
         )
         fichier_comps = st.file_uploader(
-            "Fichier compétitions (avec dates si connues)",
+            "Fichier événements (avec dates si connues)",
             type=["csv", "xlsx"],
             key="aff_comps",
         )
@@ -631,26 +631,26 @@ def page_affectation():
         if btn_reset:
             st.session_state.affectation_resultats = []
             st.session_state.affectation_equipes = None
-            st.session_state.affectation_competitions = None
+            st.session_state.affectation_evenements = None
             st.session_state.affectation_tour_actuel = 0
             st.rerun()
 
     with col_resultats:
         if not fichier_voeux or not fichier_comps:
-            st.info("Chargez les fichiers vœux et compétitions, puis lancez le Tour 1.")
+            st.info("Chargez les fichiers vœux et événements, puis lancez le Tour 1.")
             return
 
         # Lecture des fichiers
         try:
             voeux_df = lire_fichier(
                 fichier_voeux,
-                ["numero_equipe", "nb_competitions_souhaitees", "voeu_1"],
+                ["numero_equipe", "nb_evenements_souhaitees", "voeu_1"],
                 "fichier vœux",
             )
-            competitions_df = lire_fichier(
+            evenements_df = lire_fichier(
                 fichier_comps,
-                ["nom_competition", "adresse", "capacite_max"],
-                "fichier compétitions",
+                ["nom_evenement", "adresse", "capacite_max"],
+                "fichier événements",
             )
         except ValueError as e:
             st.error(str(e))
@@ -671,12 +671,12 @@ def page_affectation():
         with st.expander("📋 Prévisualisation des données", expanded=False):
             st.subheader("Vœux")
             st.dataframe(voeux_df.head(10), use_container_width=True)
-            st.subheader("Compétitions")
-            st.dataframe(competitions_df, use_container_width=True)
+            st.subheader("Événements")
+            st.dataframe(evenements_df, use_container_width=True)
 
         # Diagnostic correspondance noms
-        with st.expander("🔍 Diagnostic correspondance noms compétitions", expanded=False):
-            _diagnostiquer_noms(voeux_df, competitions_df)
+        with st.expander("🔍 Diagnostic correspondance noms événements", expanded=False):
+            _diagnostiquer_noms(voeux_df, evenements_df)
 
         # Tour 1
         if btn_t1:
@@ -684,7 +684,7 @@ def page_affectation():
                 try:
                     resultats, alertes_val = lancer_affectation(
                         voeux_df=voeux_df,
-                        competitions_df=competitions_df,
+                        evenements_df=evenements_df,
                         equipes_df=equipes_df,
                         saison_vacances=saison,
                         penalite_km=float(penalite),
@@ -695,7 +695,7 @@ def page_affectation():
                     st.session_state.affectation_resultats = resultats
                     # Reconstruire pour les tours suivants
                     st.session_state.affectation_voeux_df = voeux_df
-                    st.session_state.affectation_competitions_df = competitions_df
+                    st.session_state.affectation_evenements_df = evenements_df
                     st.session_state.affectation_equipes_df = equipes_df
                     st.session_state.affectation_saison = saison
                     st.session_state.affectation_penalite = penalite
@@ -715,7 +715,7 @@ def page_affectation():
                 try:
                     resultats, _ = lancer_affectation(
                         voeux_df=st.session_state.affectation_voeux_df,
-                        competitions_df=st.session_state.affectation_competitions_df,
+                        evenements_df=st.session_state.affectation_evenements_df,
                         equipes_df=st.session_state.affectation_equipes_df,
                         saison_vacances=st.session_state.affectation_saison,
                         penalite_km=float(st.session_state.affectation_penalite),
@@ -735,7 +735,7 @@ def page_affectation():
                 try:
                     resultats, _ = lancer_affectation(
                         voeux_df=st.session_state.affectation_voeux_df,
-                        competitions_df=st.session_state.affectation_competitions_df,
+                        evenements_df=st.session_state.affectation_evenements_df,
                         equipes_df=st.session_state.affectation_equipes_df,
                         saison_vacances=st.session_state.affectation_saison,
                         penalite_km=float(st.session_state.affectation_penalite),
@@ -755,7 +755,7 @@ def page_affectation():
             _afficher_resultats_affectation(
                 st.session_state.affectation_resultats,
                 voeux_df,
-                competitions_df,
+                evenements_df,
                 equipes_df,
                 saison,
                 mode_distance=st.session_state.get("affectation_mode_distance", "haversine"),
@@ -765,7 +765,7 @@ def page_affectation():
 def _afficher_resultats_affectation(
     resultats,
     voeux_df,
-    competitions_df,
+    evenements_df,
     equipes_df,
     saison,
     mode_distance: str = "haversine",
@@ -863,7 +863,7 @@ def _afficher_resultats_affectation(
                 "Numéro équipe": int(num),
                 "Nom équipe": info.get("nom", f"Équipe {num}"),
                 "Vœu n°1 souhaité": voeu1,
-                "Compétition obtenue": nom_comp_aff,
+                "Événement obtenue": nom_comp_aff,
                 "Rang vœu obtenu": voeu_rang,
             })
 
@@ -879,7 +879,7 @@ def _afficher_resultats_affectation(
         st.success("✅ Toutes les équipes ont obtenu leur 1er vœu au Tour 1.")
 
     # -----------------------------------------------------------------------
-    # Top 10 équipes les plus loin de leur compétition d'affectation (Tour 1)
+    # Top 10 équipes les plus loin de leur événement d'affectation (Tour 1)
     # -----------------------------------------------------------------------
     try:
         centroides = charger_centroides()
@@ -890,17 +890,17 @@ def _afficher_resultats_affectation(
             adr_eq_list = [info.get("adresse", "") for info in info_equipes.values() if info.get("adresse")]
             adr_co_list = [
                 str(row["adresse"]).strip()
-                for _, row in competitions_df.iterrows()
+                for _, row in evenements_df.iterrows()
                 if pd.notna(row.get("adresse"))
             ]
             _fn_dist = creer_fn_distance_osrm(centroides, adr_eq_list, adr_co_list)
         else:
             _fn_dist = distance_entre_adresses
-        # Table adresse par compétition
+        # Table adresse par événement
         adr_par_comp: dict[str, str] = {
-            str(row["nom_competition"]).strip(): str(row["adresse"]).strip()
-            for _, row in competitions_df.iterrows()
-            if pd.notna(row.get("nom_competition")) and pd.notna(row.get("adresse"))
+            str(row["nom_evenement"]).strip(): str(row["adresse"]).strip()
+            for _, row in evenements_df.iterrows()
+            if pd.notna(row.get("nom_evenement")) and pd.notna(row.get("adresse"))
         }
         lignes_dist: list[dict] = []
         for num, nom_comp_aff in res_t1.nouvelles_affectations.items():
@@ -914,7 +914,7 @@ def _afficher_resultats_affectation(
             lignes_dist.append({
                 "Numéro équipe": int(num),
                 "Nom équipe": info.get("nom", f"Équipe {num}"),
-                "Compétition obtenue": nom_comp_aff,
+                "Événement obtenue": nom_comp_aff,
                 "Distance (km)": round(dist) if dist is not None else None,
             })
         df_dist = (
@@ -936,10 +936,10 @@ def _afficher_resultats_affectation(
         pass  # centroides non disponibles, on saute silencieusement
 
     # -----------------------------------------------------------------------
-    # Diagnostic : compétitions sans affectation malgré des vœux
+    # Diagnostic : événements sans affectation malgré des vœux
     # -----------------------------------------------------------------------
     noms_comps_valides = [
-        str(n).strip() for n in competitions_df["nom_competition"] if pd.notna(n)
+        str(n).strip() for n in evenements_df["nom_evenement"] if pd.notna(n)
     ]
     comps_sans_aff = [n for n in noms_comps_valides if n not in aff_par_comp]
     if comps_sans_aff:
@@ -957,17 +957,17 @@ def _afficher_resultats_affectation(
                 st.warning(
                     f"⚠️ **{nom_vide}** : 0 équipe affectée alors que "
                     f"{len(equipes_avec_ce_voeu)} équipe(s) l'avaient en vœu. "
-                    "Vérifiez que le nom de compétition dans les vœux correspond "
-                    "exactement à celui du fichier compétitions."
+                    "Vérifiez que le nom d'événement dans les vœux correspond "
+                    "exactement à celui du fichier événements."
                 )
 
     # -----------------------------------------------------------------------
-    # Onglets par compétition
+    # Onglets par événement
     # -----------------------------------------------------------------------
-    st.subheader("Résultats par compétition")
+    st.subheader("Résultats par événement")
 
     if not noms_comps_valides:
-        st.info("Aucune compétition trouvée dans le fichier.")
+        st.info("Aucun événement trouvé dans le fichier.")
         return
 
     onglets = st.tabs(noms_comps_valides + ["Non affectées", "Résumé global"])
@@ -978,8 +978,8 @@ def _afficher_resultats_affectation(
             equipes_ici = aff_par_comp.get(nom_comp, [])
             nb_aff = len(equipes_ici)
 
-            mask = competitions_df["nom_competition"].str.strip() == nom_comp
-            cap_vals = competitions_df.loc[mask, "capacite_max"]
+            mask = evenements_df["nom_evenement"].str.strip() == nom_comp
+            cap_vals = evenements_df.loc[mask, "capacite_max"]
             capacite = int(cap_vals.iloc[0]) if len(cap_vals) > 0 and pd.notna(cap_vals.iloc[0]) else 24
 
             st.metric(
@@ -1019,9 +1019,9 @@ def _afficher_resultats_affectation(
         tous_nums = {int(row["numero_equipe"]) for _, row in voeux_df.iterrows()}
         non_aff_nums = tous_nums - tous_nums_affectes
         if not non_aff_nums:
-            st.success("Toutes les équipes ont au moins une compétition ! ✅")
+            st.success("Toutes les équipes ont au moins un événement ! ✅")
         else:
-            st.error(f"{len(non_aff_nums)} équipe(s) sans compétition.")
+            st.error(f"{len(non_aff_nums)} équipe(s) sans événement.")
             lignes_non = []
             for num in sorted(non_aff_nums):
                 info = info_equipes.get(num, {})
@@ -1044,7 +1044,7 @@ def _afficher_resultats_affectation(
                     "Numéro équipe": num,
                     "Nom équipe": info.get("nom", f"Équipe {num}"),
                     "Tour": tour,
-                    "Compétition": nom_comp_r,
+                    "Événement": nom_comp_r,
                 })
         df_resume = pd.DataFrame(lignes_resume)
         sheets_export["Résumé"] = df_resume

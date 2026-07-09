@@ -1,5 +1,5 @@
 """
-Module 1 — Planification du calendrier des compétitions FTC France.
+Module 1 — Planification du calendrier des événements FTC France.
 
 Sélectionne les N meilleures dates (samedis) dans une fenêtre donnée en
 minimisant les conflits avec les vacances scolaires et en maximisant
@@ -41,12 +41,12 @@ class SamediCandidat:
 
 @dataclass
 class PlanningResult:
-    competitions: list[str]         # noms dans l'ordre des dates
+    evenements: list[str]         # noms dans l'ordre des dates
     dates: list[date]               # dates choisies, triées
     score_total: float
     score_vacances: float
     nb_trous: int
-    detail_par_date: list[dict]     # [{date, competition, score_vacances, zones}]
+    detail_par_date: list[dict]     # [{date, evenement, score_vacances, zones}]
     alertes: list[str]
 
 
@@ -80,7 +80,7 @@ def scorer_samedi(
 
 def calculer_nb_trous(dates: list[date]) -> int:
     """
-    Compte les samedis libres (trous) entre la 1ère et la dernière compétition.
+    Compte les samedis libres (trous) entre le 1er et le dernier événement.
     Exemple : [s1, s3, s5] → 2 trous (s2 et s4 sont libres).
     """
     if len(dates) < 2:
@@ -115,11 +115,11 @@ def calculer_score_total(
 
 def _comp_la_plus_proche_par_equipe(
     equipes_df: pd.DataFrame,
-    competitions_df: pd.DataFrame,
+    evenements_df: pd.DataFrame,
 ) -> dict:
     """
-    Retourne {numero_equipe: nom_competition} indiquant, pour chaque équipe,
-    la compétition géographiquement la plus proche.
+    Retourne {numero_equipe: nom_evenement} indiquant, pour chaque équipe,
+    l'événement géographiquement la plus proche.
 
     Utilise les centroïdes de codes postaux (Haversine).
     Si le fichier centroïdes est absent ou qu'une adresse est illisible,
@@ -130,12 +130,12 @@ def _comp_la_plus_proche_par_equipe(
     except FileNotFoundError:
         return {}  # Pas de centroïdes → pas de filtrage géographique
 
-    # Pré-calculer les coordonnées de chaque compétition
+    # Pré-calculer les coordonnées de chaque événement
     coords_comps: list[tuple[str, tuple[float, float] | None]] = []
-    for _, row_comp in competitions_df.iterrows():
+    for _, row_comp in evenements_df.iterrows():
         cp = extraire_code_postal(str(row_comp["adresse"]))
         coords = coordonnees_code_postal(cp, centroides) if cp else None
-        coords_comps.append((row_comp["nom_competition"], coords))
+        coords_comps.append((row_comp["nom_evenement"], coords))
 
     resultat: dict = {}
     for _, row_eq in equipes_df.iterrows():
@@ -162,15 +162,15 @@ def _comp_la_plus_proche_par_equipe(
     return resultat
 
 
-def assigner_competitions_dates_optimal(
+def assigner_evenements_dates_optimal(
     comps_libres: list[str],
     dates_libres: list[date],
-    competitions_df: pd.DataFrame,
+    evenements_df: pd.DataFrame,
     vacances: dict,
 ) -> list[tuple[date, str]]:
     """
-    Assigne optimalement les compétitions aux dates en minimisant
-    le nombre de compétitions placées pendant les vacances de leur zone locale.
+    Assigne optimalement les événements aux dates en minimisant
+    le nombre d'événements placées pendant les vacances de leur zone locale.
 
     Par exemple : si Nantes (Zone B) et Levallois (Zone C) sont disponibles,
     et que le 14 février est en vacances Zone B mais pas Zone C, l'algorithme
@@ -184,8 +184,8 @@ def assigner_competitions_dates_optimal(
     if n == 1:
         return [(dates_libres[0], comps_libres[0])]
 
-    # Zone locale de chaque compétition (d'après son adresse)
-    comp_index = competitions_df.set_index("nom_competition")
+    # Zone locale de chaque événement (d'après son adresse)
+    comp_index = evenements_df.set_index("nom_evenement")
     zones_comps: list[str | None] = []
     for nom in comps_libres:
         zone = None
@@ -238,13 +238,13 @@ def recherche_exhaustive(
 
     if n_libre < 0:
         raise ValueError(
-            f"{len(dates_forcees)} dates forcées pour {n} compétitions : "
+            f"{len(dates_forcees)} dates forcées pour {n} événements : "
             "trop de dates forcées."
         )
     if n_libre > len(dates_libres):
         raise ValueError(
             f"Pas assez de samedis disponibles ({len(dates_libres)}) "
-            f"pour placer {n_libre} compétition(s) supplémentaire(s)."
+            f"pour placer {n_libre} événement(s) supplémentaire(s)."
         )
 
     meilleur_score = float("inf")
@@ -265,7 +265,7 @@ def recherche_exhaustive(
 # ---------------------------------------------------------------------------
 
 def generer_planning(
-    competitions_df: pd.DataFrame,
+    evenements_df: pd.DataFrame,
     equipes_df: pd.DataFrame | None,
     fenetre_debut: date,
     fenetre_fin: date,
@@ -273,11 +273,11 @@ def generer_planning(
     saison_vacances: str = "2026_2027",
 ) -> PlanningResult:
     """
-    Génère un planning optimal pour les compétitions FTC France.
+    Génère un planning optimal pour les événements FTC France.
 
     Paramètres
     ----------
-    competitions_df : colonnes attendues — nom_competition, adresse, capacite_max,
+    evenements_df : colonnes attendues — nom_evenement, adresse, capacite_max,
                       date_forcee (optionnel)
     equipes_df      : colonnes attendues — numero_equipe, nom_equipe, adresse
                       (None = mode dégradé, scoring par zones uniquement)
@@ -287,7 +287,7 @@ def generer_planning(
     saison_vacances : identifiant de la saison ("2025_2026" ou "2026_2027")
     """
     alertes: list[str] = []
-    n = len(competitions_df)
+    n = len(evenements_df)
 
     # --- Charger le calendrier des vacances ---
     vacances = charger_vacances(saison_vacances)
@@ -307,8 +307,8 @@ def generer_planning(
 
     # --- Extraire les dates forcées ---
     dates_forcees: list[date] = []
-    if "date_forcee" in competitions_df.columns:
-        for val in competitions_df["date_forcee"].dropna():
+    if "date_forcee" in evenements_df.columns:
+        for val in evenements_df["date_forcee"].dropna():
             try:
                 d = pd.to_datetime(val).date()
                 if d.weekday() != 5:
@@ -343,12 +343,12 @@ def generer_planning(
     if len(candidats) < n_libre:
         alertes.append(
             f"⚠️ Fenêtre trop courte : {len(candidats)} samedi(s) disponible(s) "
-            f"pour {n_libre} compétition(s) à planifier. "
+            f"pour {n_libre} événement(s) à planifier. "
             "Élargissez la fenêtre de dates."
         )
         if len(candidats) == 0:
             return PlanningResult(
-                competitions=list(competitions_df["nom_competition"]),
+                evenements=list(evenements_df["nom_evenement"]),
                 dates=[],
                 score_total=float("inf"),
                 score_vacances=float("inf"),
@@ -367,35 +367,35 @@ def generer_planning(
             dates_forcees + [c.date for c in candidats_tries[:n_libre]]
         )
         alertes.append(
-            "Algorithme glouton utilisé (fenêtre > 20 samedis ou > 10 compétitions)."
+            "Algorithme glouton utilisé (fenêtre > 20 samedis ou > 10 événements)."
         )
 
     # --- Construire le résultat ---
-    # Associer compétitions ← dates
-    noms_competitions = list(competitions_df["nom_competition"])
-    # Mettre d'abord les compétitions à date forcée, puis les autres
+    # Associer événements ← dates
+    noms_evenements = list(evenements_df["nom_evenement"])
+    # Mettre d'abord les événements à date forcée, puis les autres
     comps_forcees = []
     comps_libres = []
-    if "date_forcee" in competitions_df.columns:
-        for _, row in competitions_df.iterrows():
+    if "date_forcee" in evenements_df.columns:
+        for _, row in evenements_df.iterrows():
             if pd.notna(row.get("date_forcee")):
-                comps_forcees.append(row["nom_competition"])
+                comps_forcees.append(row["nom_evenement"])
             else:
-                comps_libres.append(row["nom_competition"])
+                comps_libres.append(row["nom_evenement"])
     else:
-        comps_libres = noms_competitions[:]
+        comps_libres = noms_evenements[:]
 
-    # Dates forcées → compétitions forcées (ordre d'apparition)
-    # Dates libres → autres compétitions (ordre chronologique)
+    # Dates forcées → événements forcées (ordre d'apparition)
+    # Dates libres → autres événements (ordre chronologique)
     dates_libres_choisies = [d for d in dates_choisies if d not in dates_forcees]
 
     planning: list[tuple[date, str]] = []
     for d, nom in zip(dates_forcees, comps_forcees):
         planning.append((d, nom))
-    # Assignation optimale : chaque compétition va sur la date où sa zone locale
+    # Assignation optimale : chaque événement va sur la date où sa zone locale
     # est le moins en vacances possible (algorithme hongrois simplifié)
-    for d, nom in assigner_competitions_dates_optimal(
-        comps_libres, dates_libres_choisies, competitions_df, vacances
+    for d, nom in assigner_evenements_dates_optimal(
+        comps_libres, dates_libres_choisies, evenements_df, vacances
     ):
         planning.append((d, nom))
     planning.sort(key=lambda x: x[0])
@@ -407,12 +407,12 @@ def generer_planning(
     # Précalculer le nom de la colonne nom_equipe (optionnelle)
     col_nom_eq = "nom_equipe" if (equipes_df is not None and "nom_equipe" in equipes_df.columns) else None
 
-    # Précalculer la compétition la plus proche pour chaque équipe
+    # Précalculer l'événement la plus proche pour chaque équipe
     # (filtre géographique : on n'affiche que les équipes "naturellement" attirées
     #  par cette régionale, pas celles qui ont une régionale plus proche)
     comp_proche_par_equipe: dict = {}
     if equipes_df is not None and not equipes_df.empty:
-        comp_proche_par_equipe = _comp_la_plus_proche_par_equipe(equipes_df, competitions_df)
+        comp_proche_par_equipe = _comp_la_plus_proche_par_equipe(equipes_df, evenements_df)
 
     detail: list[dict] = []
     score_vac_total = 0.0
@@ -422,7 +422,7 @@ def generer_planning(
         score_vac_total += sv
 
         # Lister les équipes dont la zone est en vacances ce jour-là,
-        # en ne gardant que celles pour qui cette compétition est la plus proche.
+        # en ne gardant que celles pour qui cet événement est la plus proche.
         equipes_impactees: list[dict] = []
         if equipes_df is not None and not equipes_df.empty and zones:
             for _, row_eq in equipes_df.iterrows():
@@ -440,7 +440,7 @@ def generer_planning(
 
         detail.append({
             "date": d,
-            "competition": nom,
+            "evenement": nom,
             "score_vacances": sv,
             "zones_impactees": zones,
             "equipes_impactees": equipes_impactees,
@@ -451,7 +451,7 @@ def generer_planning(
 
 
     return PlanningResult(
-        competitions=[nom for _, nom in planning],
+        evenements=[nom for _, nom in planning],
         dates=[d for d, _ in planning],
         score_total=score_tot,
         score_vacances=score_vac_total,
@@ -486,18 +486,18 @@ def planning_vers_plotly(
             return "#f39c12"   # orange
         return "#e74c3c"       # rouge
 
-    # Barres des compétitions
+    # Barres des événements
     fig = go.Figure()
     for detail in result.detail_par_date:
         fig.add_trace(go.Bar(
             x=[detail["date"].isoformat()],
             y=[1],
-            name=detail["competition"],
+            name=detail["evenement"],
             marker_color=couleur(detail["score_vacances"]),
-            text=detail["competition"],
+            text=detail["evenement"],
             textposition="inside",
             hovertemplate=(
-                f"<b>{detail['competition']}</b><br>"
+                f"<b>{detail['evenement']}</b><br>"
                 f"Date : {detail['date']}<br>"
                 f"Score vacances : {detail['score_vacances']:.0f}<br>"
                 f"Zones impactées : {', '.join(detail['zones_impactees']) or 'aucune'}"
@@ -524,7 +524,7 @@ def planning_vers_plotly(
                 )
 
     fig.update_layout(
-        title="Planning des compétitions FTC France",
+        title="Planning des événements FTC France",
         xaxis_title="Date",
         yaxis_visible=False,
         barmode="overlay",
@@ -546,34 +546,34 @@ def planning_vers_dataframe(result: PlanningResult) -> pd.DataFrame:
         lignes.append({
             "Date": detail["date"].strftime("%d/%m/%Y"),
             "Jour": detail["date"].strftime("%A").capitalize(),
-            "Compétition": detail["competition"],
+            "Événement": detail["evenement"],
             "Équipes impactées": len(detail.get("equipes_impactees", [])),
             "Zones impactées": ", ".join(detail["zones_impactees"]) or "Aucune",
         })
     return pd.DataFrame(lignes)
 
 
-def planning_vers_fichier_competitions(
+def planning_vers_fichier_evenements(
     result: PlanningResult,
-    competitions_df: pd.DataFrame,
+    evenements_df: pd.DataFrame,
 ) -> pd.DataFrame:
     """
     Génère un DataFrame compatible avec le format d'entrée du Module 2.
-    Colonnes : nom_competition, adresse, capacite_max, date_forcee (YYYY-MM-DD).
+    Colonnes : nom_evenement, adresse, capacite_max, date_forcee (YYYY-MM-DD).
 
     Ce fichier peut être téléchargé et réutilisé directement comme fichier
-    compétitions dans le Module Affectation.
+    événements dans le Module Affectation.
     """
-    # Index du DataFrame original par nom de compétition
-    comps_index = competitions_df.set_index("nom_competition")
+    # Index du DataFrame original par nom d'événement
+    comps_index = evenements_df.set_index("nom_evenement")
 
     lignes = []
     for detail in result.detail_par_date:
-        nom = detail["competition"]
+        nom = detail["evenement"]
         adresse = comps_index.loc[nom, "adresse"] if nom in comps_index.index else ""
         capacite = comps_index.loc[nom, "capacite_max"] if nom in comps_index.index else ""
         lignes.append({
-            "nom_competition": nom,
+            "nom_evenement": nom,
             "adresse": adresse,
             "capacite_max": capacite,
             "date_forcee": detail["date"].strftime("%Y-%m-%d"),

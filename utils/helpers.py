@@ -18,7 +18,7 @@ import pandas as pd
 # Constantes
 # ---------------------------------------------------------------------------
 
-# Coefficient de compacité (pénalité pour les "trous" entre compétitions)
+# Coefficient de compacité (pénalité pour les "trous" entre événements)
 LAMBDA_DEFAULT: float = 0.1
 
 # Pénalité en km ajoutée à la distance d'une alternative qui tombe pendant
@@ -249,19 +249,19 @@ def _construire_matrice_osrm(
 def creer_fn_distance_osrm(
     centroides: dict[str, tuple[float, float]],
     adresses_equipes: list[str] | None = None,
-    adresses_competitions: list[str] | None = None,
+    adresses_evenements: list[str] | None = None,
 ) -> DistanceFn:
     """
     Crée une fonction distance utilisant OSRM (Table API + fallback route).
 
-    Si adresses_equipes et adresses_competitions sont fournis, tente d'abord
+    Si adresses_equipes et adresses_evenements sont fournis, tente d'abord
     un appel matriciel (Table API) pour pré-calculer toutes les distances.
     Sinon, ou en cas d'échec, fait des appels individuels avec cache.
     """
     cache: dict[tuple[str, str], float | None] = {}
 
     # Pré-calcul matriciel si les adresses sont connues
-    if adresses_equipes and adresses_competitions:
+    if adresses_equipes and adresses_evenements:
         # Extraire les CP uniques
         cps_equipes = []
         for adr in adresses_equipes:
@@ -269,7 +269,7 @@ def creer_fn_distance_osrm(
             if cp and coordonnees_code_postal(cp, centroides):
                 cps_equipes.append(cp)
         cps_comps = []
-        for adr in adresses_competitions:
+        for adr in adresses_evenements:
             cp = extraire_code_postal(adr)
             if cp and coordonnees_code_postal(cp, centroides):
                 cps_comps.append(cp)
@@ -278,7 +278,7 @@ def creer_fn_distance_osrm(
         cps_comps = list(dict.fromkeys(cps_comps))
 
         if cps_equipes and cps_comps:
-            # Construire la liste de coordonnées : d'abord équipes, puis compétitions
+            # Construire la liste de coordonnées : d'abord équipes, puis événements
             tous_cps = cps_equipes + cps_comps
             coords = [coordonnees_code_postal(cp, centroides) for cp in tous_cps]
             idx_src = list(range(len(cps_equipes)))

@@ -30,11 +30,11 @@
 ┌───────────────────┐     ┌──────────────────────┐
 │  MODULE 1         │     │  MODULE 2             │
 │  Planification    │     │  Affectation          │
-│  des compétitions │     │  des équipes          │
+│  des événements │     │  des équipes          │
 └───────────────────┘     └──────────────────────┘
         │                           │
         ▼                           ▼
-[Calendrier optimal]       [Listes équipes/compétitions]
+[Calendrier optimal]       [Listes équipes/événements]
 ```
 
 Les deux modules sont **utilisables séparément** : un utilisateur peut lancer uniquement le Module 1 pour générer un planning, ou uniquement le Module 2 si le planning est déjà connu.
@@ -43,20 +43,20 @@ Les deux modules sont **utilisables séparément** : un utilisateur peut lancer 
 
 ## 2. Contexte métier
 
-### Compétition FIRST Tech Challenge
+### Événement FIRST Tech Challenge
 
-- Chaque compétition se déroule sur **1 journée, un samedi**
-- **Une seule compétition par samedi** (jamais deux compétitions le même jour)
-- Une équipe peut participer à **1, 2 ou 3 compétitions** dans la saison
-- **Priorité absolue** : chaque équipe doit faire **au moins 1 compétition**
-- Les équipes souhaitant une 2ème ou 3ème compétition sont traitées après que toutes les équipes aient leur 1ère
+- Chaque événement se déroule sur **1 journée, un samedi**
+- **Un seul événement par samedi** (jamais deux événements le même jour)
+- Une équipe peut participer à **1, 2 ou 3 événements** dans la saison
+- **Priorité absolue** : chaque équipe doit faire **au moins 1 événement**
+- Les équipes souhaitant une 2ème ou 3ème événement sont traitées après que toutes les équipes aient leur 1ère
 
 ### Dimensionnement
 
-| Saison | Équipes | Compétitions |
+| Saison | Équipes | Événements |
 |--------|---------|--------------|
 | 2025-2026 | ~100 équipes | À déterminer |
-| 2026-2027 | ~110 équipes | 6 compétitions |
+| 2026-2027 | ~110 équipes | 6 événements |
 
 > Les données réelles de la saison 2025-2026 serviront de jeu de données de test.
 
@@ -70,12 +70,12 @@ Les vacances scolaires françaises sont **zonées** en 3 zones. La zone est dét
 | B    | Aix-Marseille, Amiens, Caen, Lille, Nancy-Metz, Nantes, Nice, Orléans-Tours, Reims, Rennes, Rouen, Strasbourg |
 | C    | Créteil, Montpellier, Paris, Toulouse, Versailles |
 
-> Règle critique : une compétition planifiée pendant les vacances de zone B n'impacte **que** les équipes de zone B inscrites à cette compétition.
+> Règle critique : un événement planifié pendant les vacances de zone B n'impacte **que** les équipes de zone B inscrites à cet événement.
 
 ### Saison FTC France 2025-2026
 
 La saison FTC se déroule typiquement d'**octobre à février**.
-Les compétitions régionales ont lieu entre **novembre et janvier**.
+Les événements régionales ont lieu entre **novembre et janvier**.
 Le **championnat national** est hors scope de cet outil.
 
 ---
@@ -84,15 +84,15 @@ Le **championnat national** est hors scope de cet outil.
 
 ### 3.1 Objectif
 
-Proposer un calendrier de compétitions qui :
+Proposer un calendrier d'événements qui :
 1. **Minimise le nombre d'équipes impactées par les vacances scolaires**
-2. **Maximise les compétitions consécutives** (samedis enchaînés, pas d'écart inutile)
+2. **Maximise les événements consécutives** (samedis enchaînés, pas d'écart inutile)
 
 ### 3.2 Entrées
 
 | Champ | Type | Description |
 |-------|------|-------------|
-| `competitions` | fichier | Fichier Excel/CSV — nom, adresse complète, capacité max |
+| `evenements` | fichier | Fichier Excel/CSV — nom, adresse complète, capacité max |
 | `equipes` | fichier | Fichier Excel/CSV — numéro, nom, adresse complète (optionnel en V1) |
 | `fenetre_debut` | date | Date de début de la fenêtre de planification |
 | `fenetre_fin` | date | Date de fin de la fenêtre de planification |
@@ -101,7 +101,7 @@ Proposer un calendrier de compétitions qui :
 
 ### 3.3 Sorties
 
-- Liste des dates proposées pour chaque compétition, triées chronologiquement
+- Liste des dates proposées pour chaque événement, triées chronologiquement
 - Score d'impact de chaque date (nb d'équipes potentiellement impactées)
 - Visualisation calendrier interactif (Plotly)
 - Export Excel avec le planning final
@@ -121,13 +121,13 @@ Proposer un calendrier de compétitions qui :
 
 ```
 Contraintes strictes :
-  - Une seule compétition par samedi
+  - Un seul événement par samedi
   - Espacement minimum : 1 semaine (samedis consécutifs autorisés)
 
 Objectif d'optimisation (dans cet ordre de priorité) :
   1. Minimiser le score_vacances total (somme des impacts sur toutes les dates choisies)
   2. Maximiser la compacité : préférer des blocs de samedis consécutifs
-     → pénaliser les "trous" (samedis libres entre deux compétitions)
+     → pénaliser les "trous" (samedis libres entre deux événements)
 ```
 
 **Formule de score composite pour un ensemble de dates D :**
@@ -135,12 +135,12 @@ Objectif d'optimisation (dans cet ordre de priorité) :
 ```python
 score_total(D) = Σ score_vacances(d)  +  λ * nb_trous(D)
 
-# nb_trous(D) = nombre de samedis libres entre la 1ère et dernière compétition
+# nb_trous(D) = nombre de samedis libres entre le 1er et le dernier événement
 # λ = coefficient de pondération (réglable, défaut = 0.1)
 # L'objectif est de minimiser score_total
 ```
 
-**Implémentation :** Recherche exhaustive si N ≤ 10 compétitions dans une fenêtre ≤ 20 samedis, sinon algorithme glouton (greedy) avec backtracking léger.
+**Implémentation :** Recherche exhaustive si N ≤ 10 événements dans une fenêtre ≤ 20 samedis, sinon algorithme glouton (greedy) avec backtracking léger.
 
 ### 3.5 Jours fériés à exclure (saison nov–jan)
 
@@ -152,7 +152,7 @@ score_total(D) = Σ score_vacances(d)  +  λ * nb_trous(D)
 ### 3.6 Cas limites
 
 - Aucun samedi ne peut éviter toutes les vacances → prendre le meilleur compromis et alerter l'utilisateur avec le score d'impact.
-- Fenêtre trop courte pour N compétitions avec espacement 1 semaine → alerter et proposer d'élargir la fenêtre.
+- Fenêtre trop courte pour N événements avec espacement 1 semaine → alerter et proposer d'élargir la fenêtre.
 
 ---
 
@@ -160,8 +160,8 @@ score_total(D) = Σ score_vacances(d)  +  λ * nb_trous(D)
 
 ### 4.1 Objectif
 
-Répartir les équipes dans les compétitions selon leurs vœux, en :
-1. Garantissant qu'**aucune équipe ne reste sans compétition** (priorité absolue)
+Répartir les équipes dans les événements selon leurs vœux, en :
+1. Garantissant qu'**aucune équipe ne reste sans événement** (priorité absolue)
 2. Maximisant la satisfaction des vœux
 3. En cas d'égalité : priorisant la **proximité géographique** (km) puis l'**ordre d'inscription**
 
@@ -170,26 +170,26 @@ Répartir les équipes dans les compétitions selon leurs vœux, en :
 | Champ | Type | Description |
 |-------|------|-------------|
 | `voeux` | fichier | Fichier Excel/CSV des vœux (issu du Forms) |
-| `competitions` | fichier | Fichier Excel/CSV des compétitions avec dates et capacités |
+| `evenements` | fichier | Fichier Excel/CSV des événements avec dates et capacités |
 
 > Le fichier vœux est généré depuis un **Google Forms ou Microsoft Forms** rempli par les équipes, exporté en Excel et importé directement dans l'Aiguilleur.
 
 ### 4.3 Sorties
 
-- **Tour 1** : Affectation de chaque équipe à sa 1ère compétition
-- **Tour 2** : Affectation des 2ème compétitions pour les équipes qui le souhaitent
-- **Tour 3** : Affectation des 3ème compétitions
-- **Résumé par compétition** : liste des équipes, taux de remplissage
+- **Tour 1** : Affectation de chaque équipe à son 1er événement
+- **Tour 2** : Affectation des 2ème événements pour les équipes qui le souhaitent
+- **Tour 3** : Affectation des 3ème événements
+- **Résumé par événement** : liste des équipes, taux de remplissage
 - **Métriques** : taux de satisfaction vœu n°1, satisfaction globale
 - **Équipes non affectées** : liste avec raison (si applicable)
 
 ### 4.4 Algorithme
 
-**Tour 1 — Garantir 1 compétition par équipe**
+**Tour 1 — Garantir 1 événement par équipe**
 
 ```
 Phase 1.1 : Affectation prioritaire par vœu n°1
-  Pour chaque compétition C (triée par nb de demandes décroissant) :
+  Pour chaque événement C (trié par nb de demandes décroissant) :
     Collecter toutes les équipes ayant C en vœu n°1
     Si nb demandes ≤ capacité(C) : affecter tout le monde
     Sinon (sursouscription) : départager selon l'ordre de priorité ci-dessous
@@ -197,11 +197,11 @@ Phase 1.1 : Affectation prioritaire par vœu n°1
 Phase 1.2 : Traiter les équipes non affectées au tour 1.1
   Pour chaque équipe non affectée :
     Essayer vœu n°2, puis vœu n°3
-    En dernier recours : affecter à la compétition avec le plus de places restantes
+    En dernier recours : affecter à l'événement avec le plus de places restantes
 
 Phase 1.3 : Vérification
-  Toutes les équipes ont au moins 1 compétition
-  Aucune compétition ne dépasse sa capacité
+  Toutes les équipes ont au moins 1 événement
+  Aucun événement ne dépasse sa capacité
 ```
 
 **Critères de priorité (dans cet ordre) :**
@@ -211,35 +211,35 @@ L'algorithme doit avoir une **vue globale** : pour chaque place disponible, il c
 > **Note :** l'ordre des vœux (vœu 1, vœu 2, vœu 3) est une **indication** pour maximiser les matchs et calculer le taux de satisfaction. Il **ne rentre pas** dans les critères de priorité.
 
 ```
-1. Équipes isolées géographiquement (~300 km+ de la compétition la plus proche)
-   → Favoriser leur vœu avec la compétition la plus proche géographiquement
+1. Équipes isolées géographiquement (~300 km+ de l'événement la plus proche)
+   → Favoriser leur vœu avec l'événement la plus proche géographiquement
      parmi leurs vœux, en favorisant les premiers vœux.
    → Ces équipes n'ont pas d'alternative réaliste, donc prioritaires.
 
-2. Équipes dont la compétition la plus proche tombe pendant leurs vacances scolaires
-   → Favoriser leur vœu avec la compétition la plus proche géographiquement
+2. Équipes dont l'événement la plus proche tombe pendant leurs vacances scolaires
+   → Favoriser leur vœu avec l'événement la plus proche géographiquement
      hors vacances scolaires de l'équipe.
 
 3. Ratio de pénibilité du repli (PRIORITAIRE sur la distance brute)
    → L'équipe dont le repli est proportionnellement le plus coûteux est favorisée.
-   → Le repli objectif d'une équipe est la compétition viable la plus proche,
+   → Le repli objectif d'une équipe est l'événement viable la plus proche,
      en excluant :
-       a) la compétition disputée
-       b) les compétitions en conflit avec les vacances de l'équipe,
+       a) l'événement disputé
+       b) les événements en conflit avec les vacances de l'équipe,
           SAUF si :
           - l'équipe les a incluses dans ses vœux (signal de disponibilité), OU
-          - l'équipe a voté pour une autre compétition tombant dans la même
+          - l'équipe a voté pour un autre événement tombant dans la même
             période de vacances (signal de disponibilité sur cette période)
-   → Ratio = distance(équipe → repli) / distance(équipe → compétition disputée)
+   → Ratio = distance(équipe → repli) / distance(équipe → événement disputé)
    → Ratio > 1 : le repli est plus loin. Plus le ratio est élevé, plus le
-     changement de compétition est pénalisant proportionnellement.
+     changement d'événement est pénalisant proportionnellement.
    → Cas limites :
      - Si dist_cible < 1 km (équipe sur place), ratio = +∞ (tout repli est pénible).
-     - Si aucune compétition viable n'existe comme repli, ratio = +∞.
+     - Si aucun événement viable n'existe comme repli, ratio = +∞.
 
 4. Proximité géographique
    → Départage si les ratios de pénibilité sont égaux : l'équipe la plus proche
-     géographiquement de la compétition est favorisée.
+     géographiquement de l'événement est favorisée.
 
 5. Ordre d'inscription (date/heure de soumission du formulaire)
    → Départage final si les critères ci-dessus ne suffisent pas.
@@ -248,15 +248,15 @@ Implémentation : tuple de tri ascendant dans cle_priorite() :
   (isolation, vacances, −ratio, dist_cible, horodatage)
 ```
 
-**Tours 2 & 3 — Équipes multi-compétitions**
+**Tours 2 & 3 — Équipes multi-événements**
 
 ```
 - Ne commencer qu'après la complétion du Tour 1
 - Recalculer les places restantes
 - Même algorithme de priorité
-- Contrainte : une équipe ne peut pas aller deux fois à la même compétition
+- Contrainte : une équipe ne peut pas aller deux fois à le même événement
 - Contrainte : si le Module 1 a été utilisé, vérifier que les dates ne se chevauchent pas
-  (normalement impossible car 1 compétition/samedi, mais à vérifier si dates manuelles)
+  (normalement impossible car 1 événement/samedi, mais à vérifier si dates manuelles)
 ```
 
 ### 4.5 Métriques de qualité
@@ -264,7 +264,7 @@ Implémentation : tuple de tri ascendant dans cle_priorite() :
 ```
 Taux satisfaction vœu n°1  = nb équipes ayant obtenu vœu 1 / nb total équipes
 Taux satisfaction global   = nb équipes dans leur liste de vœux / nb total équipes
-Taux remplissage           = nb équipes affectées / capacité max  (par compétition)
+Taux remplissage           = nb équipes affectées / capacité max  (par événement)
 ```
 
 ---
@@ -279,12 +279,12 @@ Page d'accueil (sélection du module — sidebar)
 │   ├── Présentation des deux modules
 │   └── Téléchargement des 4 templates CSV :
 │       ├── equipes_2025_2026.csv
-│       ├── competitions_2026_2027.csv
-│       ├── competitions_avec_dates_template.csv  ← nouveau
+│       ├── evenements_2026_2027.csv
+│       ├── evenements_avec_dates_template.csv  ← nouveau
 │       └── voeux_2025_2026.csv
 │
-├── 📅 Module 1 — Planification des compétitions
-│   ├── Upload fichier compétitions (CSV/Excel)
+├── 📅 Module 1 — Planification des événements
+│   ├── Upload fichier événements (CSV/Excel)
 │   ├── Upload fichier équipes (CSV/Excel) — optionnel
 │   ├── Sélection saison vacances scolaires
 │   ├── Sélection fenêtre de dates (date_début / date_fin)
@@ -293,22 +293,22 @@ Page d'accueil (sélection du module — sidebar)
 │   ├── Métriques (score vacances, samedis creux, score total)
 │   ├── Affichage calendrier interactif (Plotly)
 │   ├── Tableau des dates retenues
-│   ├── Expander "Équipes potentiellement impactées par compétition"
+│   ├── Expander "Équipes potentiellement impactées par événement"
 │   ├── Bouton "Télécharger le planning (Excel)"
-│   └── Bouton "Télécharger le fichier compétitions pour Module 2 (CSV)"
+│   └── Bouton "Télécharger le fichier événements pour Module 2 (CSV)"
 │
 └── 🏆 Module 2 — Affectation des équipes
     ├── Upload fichier vœux (Excel/CSV issu du Forms)
-    ├── Upload fichier compétitions (CSV/Excel, avec dates si connues)
+    ├── Upload fichier événements (CSV/Excel, avec dates si connues)
     ├── Upload fichier équipes (optionnel — pour les adresses)
     ├── Sélection saison + slider pénalité vacances (km)
     ├── Boutons séquentiels : Tour 1 / Tour 2 / Tour 3 / Réinitialiser
     ├── Expander "Prévisualisation des données"
-    ├── Expander "🔍 Diagnostic correspondance noms compétitions"  ← nouveau
+    ├── Expander "🔍 Diagnostic correspondance noms événements"  ← nouveau
     ├── Expander "🐛 Debug algorithme"  ← nouveau
-    ├── Alertes : compétitions avec 0 affectation malgré des vœux  ← nouveau
+    ├── Alertes : événements avec 0 affectation malgré des vœux  ← nouveau
     ├── Métriques : taux vœu n°1, taux satisfaction, total affectations
-    ├── Onglets par compétition (équipes affectées + rang du vœu)
+    ├── Onglets par événement (équipes affectées + rang du vœu)
     ├── Onglet "Non affectées"
     ├── Onglet "Résumé global"
     └── Bouton "Télécharger les affectations (Excel)"
@@ -350,21 +350,21 @@ Page d'accueil (sélection du module — sidebar)
 |---------|------|-------------|-------------|
 | `numero_equipe` | int | Oui | Numéro officiel FTC |
 | `horodatage` | datetime | Non | Date/heure de soumission (pour tie-break) |
-| `voeu_1` | str | Oui | Nom exact de la compétition (vœu 1) |
+| `voeu_1` | str | Oui | Nom exact de l'événement (vœu 1) |
 | `voeu_2` | str | Non | Vœu 2 |
 | `voeu_3` | str | Non | Vœu 3 |
-| `nb_competitions_souhaitees` | int | Oui | 1, 2 ou 3 |
+| `nb_evenements_souhaitees` | int | Oui | 1, 2 ou 3 |
 
 > Le nom des colonnes dans le Forms doit correspondre exactement à ce tableau. Un template de Forms sera fourni.
 
-### 6.3 Fichier compétitions
+### 6.3 Fichier événements
 
 **Format : CSV ou Excel (.xlsx)**
 **Source : saisie par le PM**
 
 | Colonne | Type | Obligatoire | Description |
 |---------|------|-------------|-------------|
-| `nom_competition` | str | Oui | Nom unique de la compétition |
+| `nom_evenement` | str | Oui | Nom unique de l'événement |
 | `adresse` | str | Oui | Adresse complète du lieu (rue, code postal, ville) |
 | `capacite_max` | int | Oui | Nombre maximum d'équipes |
 | `date_forcee` | date | Non | Si la date est déjà fixée (format YYYY-MM-DD) |
@@ -372,8 +372,8 @@ Page d'accueil (sélection du module — sidebar)
 > La zone de vacances et les coordonnées GPS sont **calculées automatiquement** depuis l'adresse.
 
 **Templates disponibles :**
-- `competitions_2026_2027.csv` — compétitions sans dates (entrée Module 1)
-- `competitions_avec_dates_template.csv` — compétitions avec dates réelles 2026-2027 (entrée directe Module 2)
+- `evenements_2026_2027.csv` — événements sans dates (entrée Module 1)
+- `evenements_avec_dates_template.csv` — événements avec dates réelles 2026-2027 (entrée directe Module 2)
 
 > **Règle critique :** les noms dans ce fichier doivent correspondre **exactement** aux noms utilisés dans le fichier vœux. Utiliser le diagnostic de correspondance dans le Module 2 pour vérifier. Une correspondance souple (accents, casse, espaces) est appliquée automatiquement, mais les caractères invisibles (U+200B, U+00A0) peuvent bloquer même la correspondance normalisée.
 
@@ -383,10 +383,10 @@ Le fichier Excel exporté contient :
 
 | Feuille | Contenu |
 |---------|---------|
-| `Résumé` | Vue globale : dates, compétitions, nb équipes, taux de remplissage |
+| `Résumé` | Vue globale : dates, événements, nb équipes, taux de remplissage |
 | `Planning` | Calendrier visuel (une ligne = un samedi) |
-| `[Nom compétition]` | Une feuille par compétition avec la liste des équipes affectées |
-| `Non_affectées` | Équipes sans compétition (si applicable) |
+| `[Nom événement]` | Une feuille par événement avec la liste des équipes affectées |
+| `Non_affectées` | Équipes sans événement (si applicable) |
 | `Métriques` | Taux de satisfaction, remplissage, scores d'impact |
 
 ---
@@ -435,7 +435,7 @@ ZONE_PAR_DEPARTEMENT = {
 **Approche :** Utiliser une table statique des centroïdes de codes postaux français (fichier CSV inclus dans le projet, ~36 000 lignes, source : La Poste / data.gouv.fr).
 
 - Pas d'API externe nécessaire → fonctionne **offline**
-- Précision suffisante pour calculer des distances inter-équipes/compétitions (à ±10 km)
+- Précision suffisante pour calculer des distances inter-équipes/événements (à ±10 km)
 
 **Calcul de distance :** Formule de Haversine (distance orthodromique) — pas besoin de Google Maps.
 
@@ -457,16 +457,16 @@ def haversine(lat1, lon1, lat2, lon2) -> float:
 
 ### Règles absolues (non négociables)
 
-1. **Chaque équipe doit avoir au minimum 1 compétition** — priorité absolue.
-2. **La capacité max d'une compétition ne peut pas être dépassée.**
-3. **Une équipe ne peut pas participer deux fois à la même compétition.**
-4. **Les compétitions ont lieu un samedi** (jamais un dimanche ou jour de semaine).
-5. **Une seule compétition par samedi** (jamais deux compétitions le même week-end).
+1. **Chaque équipe doit avoir au minimum 1 événement** — priorité absolue.
+2. **La capacité max d'un événement ne peut pas être dépassée.**
+3. **Une équipe ne peut pas participer deux fois à le même événement.**
+4. **Les événements ont lieu un samedi** (jamais un dimanche ou jour de semaine).
+5. **Un seul événement par samedi** (jamais deux événements le même week-end).
 
 ### Règles de planification (Module 1)
 
-- Espacement minimum entre deux compétitions : **1 semaine** (samedis consécutifs OK).
-- Objectif secondaire : **maximiser les blocs consécutifs** (minimiser les trous entre compétitions).
+- Espacement minimum entre deux événements : **1 semaine** (samedis consécutifs OK).
+- Objectif secondaire : **maximiser les blocs consécutifs** (minimiser les trous entre événements).
 - Un samedi en vacances scolaires **peut** être utilisé si nécessaire (pénalité, pas interdiction).
 - Les jours fériés nationaux sont traités comme des vacances toutes zones.
 
@@ -476,37 +476,37 @@ L'algorithme a une vue globale : pour chaque place libre, il confronte toutes le
 
 Critères de priorité (dans cet ordre) :
 
-1. **Isolement géographique** — Équipes dont la compétition la plus proche (toutes compétitions confondues) est à ~300 km+. Favoriser leur vœu avec la compétition la plus proche parmi leurs vœux, en favorisant les premiers vœux.
-2. **Conflit vacances scolaires** — Équipes dont la compétition la plus proche tombe pendant leurs vacances scolaires. Favoriser la compétition la plus proche hors vacances.
+1. **Isolement géographique** — Équipes dont l'événement la plus proche (tous événements confondus) est à ~300 km+. Favoriser leur vœu avec l'événement la plus proche parmi leurs vœux, en favorisant les premiers vœux.
+2. **Conflit vacances scolaires** — Équipes dont l'événement la plus proche tombe pendant leurs vacances scolaires. Favoriser l'événement la plus proche hors vacances.
 3. **Ratio de pénibilité du repli** — Prioritaire sur la distance brute. Ratio = distance(équipe → repli) / distance(équipe → cible). L'équipe dont le repli est proportionnellement le plus coûteux est favorisée. Si dist_cible < 1 km ou aucun repli viable, ratio = +∞.
-4. **Proximité géographique** — Départage si ratios égaux : équipe la plus proche de la compétition.
+4. **Proximité géographique** — Départage si ratios égaux : équipe la plus proche de l'événement.
 5. **Ordre d'inscription** — Horodatage de soumission du formulaire (départage final).
 
 ### Workflows indépendants
 
-- Le **Module 2 peut fonctionner sans le Module 1** : les dates peuvent être saisies manuellement dans le fichier compétitions (`date_forcee`), ou ignorées si seule l'affectation est nécessaire.
+- Le **Module 2 peut fonctionner sans le Module 1** : les dates peuvent être saisies manuellement dans le fichier événements (`date_forcee`), ou ignorées si seule l'affectation est nécessaire.
 - Le **Module 1 peut fonctionner sans le fichier équipes** (mode dégradé : minimise les conflits toutes zones confondues).
 
 ---
 
 ## 9. Diagnostic et debug
 
-### 9.1 Diagnostic correspondance noms compétitions
+### 9.1 Diagnostic correspondance noms événements
 
-Accessible via l'expander **"🔍 Diagnostic correspondance noms compétitions"** dans le Module 2, disponible dès que les deux fichiers sont chargés (avant même de lancer le Tour 1).
+Accessible via l'expander **"🔍 Diagnostic correspondance noms événements"** dans le Module 2, disponible dès que les deux fichiers sont chargés (avant même de lancer le Tour 1).
 
 **Ce qu'il affiche :**
-- Tableau des noms officiels (fichier compétitions) avec :
+- Tableau des noms officiels (fichier événements) avec :
   - `repr()` Python → révèle les caractères invisibles (U+200B, U+00A0, BOM, etc.)
   - Nombre de vœux qui correspondent **exactement** à ce nom
   - Version normalisée (sans accents, sans ponctuation)
-- Liste des valeurs de vœux sans correspondance exacte dans le fichier compétitions, avec la correspondance normalisée suggérée ou "❌ Aucune"
+- Liste des valeurs de vœux sans correspondance exacte dans le fichier événements, avec la correspondance normalisée suggérée ou "❌ Aucune"
 
-**Quand l'utiliser :** si des équipes n'apparaissent pas dans les résultats d'une compétition malgré des vœux visibles dans le fichier.
+**Quand l'utiliser :** si des équipes n'apparaissent pas dans les résultats d'un événement malgré des vœux visibles dans le fichier.
 
 ### 9.2 Normalisation automatique des noms
 
-Avant d'exécuter l'algorithme, `lancer_affectation()` applique une correspondance souple pour corriger les écarts courants entre vœux et compétitions :
+Avant d'exécuter l'algorithme, `lancer_affectation()` applique une correspondance souple pour corriger les écarts courants entre vœux et événements :
 
 | Niveau | Ce qui est corrigé | Exemple |
 |--------|--------------------|---------|
@@ -519,15 +519,15 @@ Avant d'exécuter l'algorithme, `lancer_affectation()` applique une correspondan
 
 ### 9.3 Debug algorithme Phase A
 
-Chaque exécution de tour émet des traces `[DEBUG Tn]` pour chaque compétition ayant des demandeurs, visibles dans l'expander **"🐛 Debug algorithme"** des résultats.
+Chaque exécution de tour émet des traces `[DEBUG Tn]` pour chaque événement ayant des demandeurs, visibles dans l'expander **"🐛 Debug algorithme"** des résultats.
 
 Format : `[DEBUG T1] Phase A — 'Régionale Lyon' : 43 demandeur(s) / 24 place(s) restante(s).`
 
 **Interprétation :**
-- `0 demandeur(s)` → le nom dans le dict `competitions` ne correspond à aucun vœu après normalisation → problème d'encodage dans le CSV compétitions
-- La compétition n'apparaît pas du tout → elle n'a reçu aucun premier vœu (tous les demandeurs l'ont en vœu 2 ou 3)
+- `0 demandeur(s)` → le nom dans le dict `evenements` ne correspond à aucun vœu après normalisation → problème d'encodage dans le CSV événements
+- La événement n'apparaît pas du tout → elle n'a reçu aucun premier vœu (tous les demandeurs l'ont en vœu 2 ou 3)
 - `demandeurs > places` → sur-souscription, certains seront renvoyés en Phase B
 
-### 9.4 Alerte compétitions sans affectation
+### 9.4 Alerte événements sans affectation
 
-Après l'affichage des résultats, si une compétition a 0 équipe affectée alors qu'elle était présente dans des vœux, une alerte `⚠️` est affichée avec le nombre d'équipes concernées et un rappel de vérifier la correspondance des noms.
+Après l'affichage des résultats, si un événement a 0 équipe affectée alors qu'elle était présente dans des vœux, une alerte `⚠️` est affichée avec le nombre d'équipes concernées et un rappel de vérifier la correspondance des noms.

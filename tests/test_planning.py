@@ -187,13 +187,13 @@ class TestRechercheExhaustive:
 # ---------------------------------------------------------------------------
 
 class TestGenererPlanningIntegration:
-    def test_planning_6_competitions(self):
-        """Test avec le template réel des 6 compétitions."""
+    def test_planning_6_evenements(self):
+        """Test avec le template réel des 6 événements."""
         import pandas as pd
 
-        competitions_df = pd.read_csv("data/templates/competitions_2026_2027.csv")
+        evenements_df = pd.read_csv("data/templates/evenements_2026_2027.csv")
         result = generer_planning(
-            competitions_df=competitions_df,
+            evenements_df=evenements_df,
             equipes_df=None,
             fenetre_debut=date(2026, 11, 1),
             fenetre_fin=date(2027, 1, 31),
@@ -207,9 +207,9 @@ class TestGenererPlanningIntegration:
         """Le 1er novembre (Toussaint) ne doit pas être sélectionné."""
         import pandas as pd
 
-        competitions_df = pd.read_csv("data/templates/competitions_2026_2027.csv")
+        evenements_df = pd.read_csv("data/templates/evenements_2026_2027.csv")
         result = generer_planning(
-            competitions_df=competitions_df,
+            evenements_df=evenements_df,
             equipes_df=None,
             fenetre_debut=date(2026, 11, 1),
             fenetre_fin=date(2027, 1, 31),
@@ -225,10 +225,10 @@ class TestGenererPlanningIntegration:
         """Avec le fichier équipes, le scoring doit être basé sur les nb d'équipes."""
         import pandas as pd
 
-        competitions_df = pd.read_csv("data/templates/competitions_2026_2027.csv")
+        evenements_df = pd.read_csv("data/templates/evenements_2026_2027.csv")
         equipes_df = pd.read_csv("data/templates/equipes_2025_2026.csv")
         result = generer_planning(
-            competitions_df=competitions_df,
+            evenements_df=evenements_df,
             equipes_df=equipes_df,
             fenetre_debut=date(2026, 11, 1),
             fenetre_fin=date(2027, 1, 31),
@@ -240,9 +240,9 @@ class TestGenererPlanningIntegration:
         """Le DataFrame exporté doit avoir les bonnes colonnes."""
         import pandas as pd
 
-        competitions_df = pd.read_csv("data/templates/competitions_2026_2027.csv")
+        evenements_df = pd.read_csv("data/templates/evenements_2026_2027.csv")
         result = generer_planning(
-            competitions_df=competitions_df,
+            evenements_df=evenements_df,
             equipes_df=None,
             fenetre_debut=date(2026, 11, 1),
             fenetre_fin=date(2027, 1, 31),
@@ -250,5 +250,5 @@ class TestGenererPlanningIntegration:
         )
         df = planning_vers_dataframe(result)
         assert "Date" in df.columns
-        assert "Compétition" in df.columns
+        assert "Événement" in df.columns
         assert len(df) == 6
