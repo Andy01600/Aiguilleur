@@ -7,3 +7,6 @@ data/input/
 .streamlit/
 .pytest_cache/
 .claude/
+
+# Fichiers systeme macOS
+.DS_Store
