@@ -16,6 +16,7 @@ from modules.affectation import (
     Evenement,
     Equipe,
     _extraire_voeux,
+    _trouver_fallback,
     calculer_score_alternative,
     cle_priorite,
     construire_evenements,
@@ -638,3 +639,72 @@ class TestRegressionBugs:
         alertes = valider_voeux(voeux_df, comps_df)
         assert any("dupliqués" in a for a in alertes), \
             "Le warning doublon doit être émis même si _extraire_voeux déduplique"
+
+
+# ---------------------------------------------------------------------------
+# Fallback Tour 1 — événement encore ouvert le plus proche
+# ---------------------------------------------------------------------------
+
+class TestTrouverFallback:
+    """Le fallback privilégie la proximité, pas le nombre de places libres."""
+
+    def _equipe(self, adresse, affectations=()):
+        return Equipe(
+            numero=1, nom="Test", adresse=adresse, code_postal=None, zone=None,
+            horodatage=None, nb_souhaite=1, voeux=[], affectations=list(affectations),
+        )
+
+    def test_prend_le_plus_proche_meme_avec_une_seule_place(self):
+        """Lyon : 1 place à 0 km bat 20 places à 600 km."""
+        evenements = {
+            "Lyon": Evenement("Lyon", "69003 Lyon", 24, None, 1),
+            "Nantes": Evenement("Nantes", "44000 Nantes", 24, None, 20),
+        }
+        eq = self._equipe("69003 Lyon")
+        assert _trouver_fallback(eq, evenements, CENTROIDES_TEST) == "Lyon"
+
+    def test_ignore_les_evenements_complets(self):
+        """Le plus proche étant complet, on retient le suivant le plus proche."""
+        evenements = {
+            "Lyon": Evenement("Lyon", "69003 Lyon", 24, None, 0),
+            "Clermont": Evenement("Clermont", "63000 Clermont-Ferrand", 24, None, 1),
+            "Nantes": Evenement("Nantes", "44000 Nantes", 24, None, 20),
+        }
+        eq = self._equipe("69003 Lyon")
+        assert _trouver_fallback(eq, evenements, CENTROIDES_TEST) == "Clermont"
+
+    def test_ignore_les_evenements_deja_affectes(self):
+        """Un événement déjà obtenu n'est pas proposé une seconde fois."""
+        evenements = {
+            "Lyon": Evenement("Lyon", "69003 Lyon", 24, None, 5),
+            "Clermont": Evenement("Clermont", "63000 Clermont-Ferrand", 24, None, 1),
+        }
+        eq = self._equipe("69003 Lyon", affectations=["Lyon"])
+        assert _trouver_fallback(eq, evenements, CENTROIDES_TEST) == "Clermont"
+
+    def test_sans_adresse_retombe_sur_le_plus_de_places(self):
+        """Distance non calculable → départage par places restantes."""
+        evenements = {
+            "Lyon": Evenement("Lyon", "69003 Lyon", 24, None, 1),
+            "Nantes": Evenement("Nantes", "44000 Nantes", 24, None, 20),
+        }
+        eq = self._equipe("")
+        assert _trouver_fallback(eq, evenements, CENTROIDES_TEST) == "Nantes"
+
+    def test_distance_egale_departage_par_places(self):
+        """À distance identique, l'événement le moins tendu est retenu."""
+        evenements = {
+            "A": Evenement("A", "69003 Lyon", 24, None, 2),
+            "B": Evenement("B", "69003 Lyon", 24, None, 9),
+        }
+        eq = self._equipe("69003 Lyon")
+        assert _trouver_fallback(eq, evenements, CENTROIDES_TEST) == "B"
+
+    def test_aucune_place_disponible(self):
+        """Tous les événements complets → aucun fallback possible."""
+        evenements = {
+            "Lyon": Evenement("Lyon", "69003 Lyon", 24, None, 0),
+            "Nantes": Evenement("Nantes", "44000 Nantes", 24, None, 0),
+        }
+        eq = self._equipe("69003 Lyon")
+        assert _trouver_fallback(eq, evenements, CENTROIDES_TEST) is None

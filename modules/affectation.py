@@ -756,8 +756,14 @@ def _trouver_fallback(
     fn_distance: DistanceFn = distance_entre_adresses,
 ) -> str | None:
     """
-    Fallback Tour 1 : renvoie l'événement avec le plus de places restantes.
-    Tie-break : la plus proche géographiquement.
+    Fallback Tour 1 : renvoie l'événement encore ouvert le plus proche de l'équipe.
+    Tie-break : le plus de places restantes (à distance égale, on répartit sur
+    l'événement le moins tendu).
+
+    Une équipe qui n'obtient aucun de ses vœux subit déjà le plus gros écart à
+    ses préférences : on limite au moins le trajet imposé. Si l'adresse est
+    inconnue (distance non calculable), on retombe sur l'événement qui a le plus
+    de places restantes.
     """
     candidates = [
         comp for comp in evenements.values()
@@ -767,18 +773,16 @@ def _trouver_fallback(
     if not candidates:
         return None
 
-    max_places = max(c.places_restantes for c in candidates)
-    avec_max = [c for c in candidates if c.places_restantes == max_places]
-
-    if len(avec_max) == 1 or not equipe.adresse:
-        return avec_max[0].nom
-
-    # Tie-break géographique
     def dist_comp(comp: Evenement) -> float:
+        if not equipe.adresse:
+            return float("inf")
         d = fn_distance(equipe.adresse, comp.adresse, centroides)
         return d if d is not None else float("inf")
 
-    return min(avec_max, key=dist_comp).nom
+    # Distance croissante, puis places restantes décroissantes.
+    # Si aucune distance n'est calculable, toutes les clés valent +inf et le tri
+    # se réduit au nombre de places restantes.
+    return min(candidates, key=lambda c: (dist_comp(c), -c.places_restantes)).nom
 
 
 def _trouver_plus_faible_occupant(

@@ -197,7 +197,9 @@ Phase 1.1 : Affectation prioritaire par vœu n°1
 Phase 1.2 : Traiter les équipes non affectées au tour 1.1
   Pour chaque équipe non affectée :
     Essayer vœu n°2, puis vœu n°3
-    En dernier recours : affecter à l'événement avec le plus de places restantes
+    En dernier recours : affecter à l'événement encore ouvert le plus proche
+    (tie-break : le plus de places restantes ; sans adresse exploitable :
+     le plus de places restantes)
 
 Phase 1.3 : Vérification
   Toutes les équipes ont au moins 1 événement

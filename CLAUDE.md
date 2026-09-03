@@ -86,7 +86,7 @@ Aiguilleur/
 | Diagnostic correspondance noms | ✅ Implémenté | Expander dans Module 2, affiche repr() des noms |
 | Debug algorithme Phase A | ✅ Implémenté | Traces [DEBUG Tn] dans executer_tour(), expander dédié |
 | Jeu de données test | ✅ Régénéré (2026-06-26) | data/test_26-06/ : 112 équipes Confirmées/Très probables depuis Database_2026_2027.xlsx (géocodage par département). Ancien jeu conservé dans data/test/ |
-| Tests | ✅ Effectués | Tests manuels sur Streamlit Cloud avec jeu de données réel |
+| Tests | ✅ Effectués | Tests manuels sur Streamlit Cloud avec jeu de données réel. Suite unitaire dans tests/ (pytest non installé sur la machine locale : Python 3.9 système, voir la note d'exécution sous 3.9) |
 | Déploiement Streamlit Cloud | ⬜ Optionnel | |
 
 ---
@@ -113,6 +113,7 @@ Aiguilleur/
 | 2026-06-26 | Ordre RÉEL de cle_priorite() (clarification) | Dans le code actuel, la pénibilité du repli est placée AVANT la distance, pas comme simple tie-break post-distance. Tuple = (1) isolation >300 km, (2) conflit vacances, (3) **pénibilité du repli (ratio, DESC)**, (4) distance cible (départage), (5) horodatage. C'est donc un critère **primaire**. Comportement analysé en profondeur (équipes 32688/32921, voir analyses session) et **validé par le PM : à conserver tel quel**. Limite assumée : le ratio peut sous-prioriser une équipe géographiquement isolée dont le repli est proche *en proportion* (ex. 32688, loin de tout, jugée peu prioritaire). Levier retenu pour les débordements = augmenter `capacite_max` de l'événement saturé, **PAS** changer l'algo. |
 | 2026-06-26 | Mode d'affectation par défaut = Gale-Shapley | L'app propose glouton / Gale-Shapley / displacement ; le défaut est **Gale-Shapley** (matching stable, "recommandé"). Les résultats diffèrent du mode glouton (ex. 32688 → La Boisse en GS vs Île-de-France en glouton). À garder en tête pour reproduire un run. |
 | 2026-06-26 | Jeu de test régénéré depuis la base réelle + restructuration événements | data/test_26-06/ généré depuis Database_2026_2027.xlsx (112 équipes Confirmées + Très probables). Géocodage adresse via colonne Département pour désambiguïser les villes homonymes (corrige 5 CP erronés). 25 établissements sans n° d'équipe → numéros provisoires 90001+. Événements 2026-2027 restructurées : Régionale Clermont → "Régionale de Neuville", Régionale Lyon → "Régionale de la Boisse" ; vœux renommés en conséquence (mapping confirmé PM). Dates ajoutées (samedis janv-févr 2027). Capacités ajustées par le PM (Pays de la Loire/Nantes monté à 23). |
+| 2026-09-02 | Fallback Tour 1 : proximité avant places restantes | `_trouver_fallback()` retournait l'événement avec le plus de places restantes (proximité en simple tie-break). Une équipe n'obtenant aucun de ses 3 vœux subissait donc à la fois l'écart maximal à ses préférences **et** un trajet potentiellement très long. Nouvelle règle (décidée par le PM) : parmi les événements ayant au moins une place libre, retenir **le plus proche** ; tie-break = le plus de places restantes ; adresse inconnue (distance non calculable) = retour au plus de places restantes. Aucun impact sur data/test_26-06/ (0 fallback, satisfaction 100 %). 6 tests ajoutés : `TestTrouverFallback` dans tests/test_affectation.py. |
 
 ---
 
