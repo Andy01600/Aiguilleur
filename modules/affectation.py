@@ -870,6 +870,10 @@ def _executer_tour_gs(
     rejete_de: dict[int, set[str]] = {num: set() for num in eligibles}
     # Équipes en attente de faire une proposition
     en_attente: set[int] = set(eligibles.keys())
+    # Équipes ayant épuisé tous leurs vœux, cumulées sur TOUTES les itérations
+    # (initialisée hors de la boucle : sinon seules les équipes épuisées à la
+    # dernière itération accédaient au fallback, les autres restaient sans événement)
+    sans_voeu: list[int] = []
 
     # Borne de terminaison : n×m propositions maximum
     for _ in range(len(eligibles) * len(evenements) + 1):
@@ -878,7 +882,6 @@ def _executer_tour_gs(
 
         # --- Collecte des propositions ---
         propositions: dict[str, list[int]] = {nom: [] for nom in evenements}
-        sans_voeu: list[int] = []
 
         for num in list(en_attente):
             equipe = eligibles[num]
@@ -1034,12 +1037,18 @@ def lancer_affectation(
     nb_tours: int = 3,
     mode_distance: str = "haversine",
     mode_affectation: str = "glouton",
+    affectations_forcees: dict[int, str] | None = None,
 ) -> tuple[list[AffectationResult], list[str]]:
     """
     Lance l'affectation complète (jusqu'à nb_tours tours).
 
     Si equipes_df est fourni, les adresses y sont lues (utile quand le fichier
     vœux ne contient pas d'adresse, car issu du Forms).
+
+    affectations_forcees : exceptions manuelles {numero_equipe: nom_evenement}.
+    Ces équipes sont placées d'office avant le Tour 1 (la place est consommée)
+    et n'entrent pas en concurrence au Tour 1. Elles restent éligibles aux
+    tours suivants si elles souhaitent plusieurs événements.
 
     Retourne (liste de AffectationResult, alertes de validation).
     """
@@ -1130,11 +1139,36 @@ def lancer_affectation(
             f"({len(equipes)}). Certaines équipes ne pourront pas être placées."
         )
 
+    # Affectations forcées : placement d'office avant le Tour 1
+    forcees: dict[int, str] = {}
+    for num, nom_comp in (affectations_forcees or {}).items():
+        num = int(num)
+        nom_comp = str(nom_comp).strip()
+        nom_comp = noms_comp_normalise.get(_normaliser(nom_comp), nom_comp)
+        if num not in equipes:
+            alertes_validation.append(f"⚠️ Affectation forcée ignorée : équipe {num} absente du fichier vœux.")
+            continue
+        if nom_comp not in evenements:
+            alertes_validation.append(
+                f"⚠️ Affectation forcée ignorée : événement inconnu « {nom_comp} » (équipe {num})."
+            )
+            continue
+        comp = evenements[nom_comp]
+        comp.equipes_affectees.append(num)
+        comp.places_restantes -= 1
+        equipes[num].affectations.append(nom_comp)
+        forcees[num] = nom_comp
+        alertes_validation.append(f"🔒 Équipe {num} affectée d'office à {nom_comp}.")
+        if comp.places_restantes < 0:
+            alertes_validation.append(f"⚠️ {nom_comp} dépasse sa capacité avec les affectations forcées.")
+
     resultats: list[AffectationResult] = []
     for tour in range(1, nb_tours + 1):
         resultat = executer_tour(
             tour_num=tour,
-            equipes=equipes,
+            equipes=(
+                {n: e for n, e in equipes.items() if n not in forcees} if tour == 1 else equipes
+            ),
             evenements=evenements,
             centroides=centroides,
             vacances=vacances,
@@ -1142,6 +1176,12 @@ def lancer_affectation(
             fn_distance=fn_distance,
             mode_affectation=mode_affectation,
         )
+        if tour == 1 and forcees:
+            # Réintégrer les affectations forcées dans le résultat du Tour 1
+            resultat.nouvelles_affectations = {**forcees, **resultat.nouvelles_affectations}
+            resultat.metriques = _calculer_metriques(
+                1, equipes, evenements, resultat.nouvelles_affectations
+            )
         resultats.append(resultat)
         # Arrêter si aucune nouvelle affectation au tour précédent
         if not resultat.nouvelles_affectations and tour > 1:

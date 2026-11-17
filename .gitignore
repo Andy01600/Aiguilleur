@@ -10,3 +10,8 @@ data/input/
 
 # Fichiers systeme macOS
 .DS_Store
+
+# Données réelles d'inscription (ne pas publier)
+Repartitions_officielles/
+aff_par.pkl
+data/inscrits_*/

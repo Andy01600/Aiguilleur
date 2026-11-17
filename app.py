@@ -553,6 +553,12 @@ def page_affectation():
             type=["csv", "xlsx"],
             key="aff_equipes",
         )
+        fichier_forcees = st.file_uploader(
+            "Affectations forcées (optionnel : numero_equipe, nom_evenement)",
+            type=["csv", "xlsx"],
+            key="aff_forcees",
+            help="Exceptions décidées au cas par cas : l'équipe est placée d'office dans cet événement avant le Tour 1.",
+        )
 
         saison = st.selectbox(
             "Saison",
@@ -667,6 +673,20 @@ def page_affectation():
             except ValueError as e:
                 st.warning(f"Fichier équipes ignoré : {e}")
 
+        affectations_forcees = None
+        if fichier_forcees:
+            try:
+                forcees_df = lire_fichier(
+                    fichier_forcees,
+                    ["numero_equipe", "nom_evenement"],
+                    "fichier affectations forcées",
+                )
+                affectations_forcees = dict(
+                    zip(forcees_df["numero_equipe"].astype(int), forcees_df["nom_evenement"])
+                )
+            except ValueError as e:
+                st.warning(f"Fichier affectations forcées ignoré : {e}")
+
         # Prévisualisation
         with st.expander("📋 Prévisualisation des données", expanded=False):
             st.subheader("Vœux")
@@ -691,6 +711,7 @@ def page_affectation():
                         nb_tours=1,
                         mode_distance=mode_dist_key,
                         mode_affectation=mode_aff_key,
+                        affectations_forcees=affectations_forcees,
                     )
                     st.session_state.affectation_resultats = resultats
                     # Reconstruire pour les tours suivants
@@ -701,6 +722,7 @@ def page_affectation():
                     st.session_state.affectation_penalite = penalite
                     st.session_state.affectation_mode_distance = mode_dist_key
                     st.session_state.affectation_mode_affectation = mode_aff_key
+                    st.session_state.affectation_forcees = affectations_forcees
                     st.session_state.affectation_tour_actuel = 1
                     for a in alertes_val:
                         st.warning(a)
@@ -722,6 +744,7 @@ def page_affectation():
                         nb_tours=2,
                         mode_distance=st.session_state.get("affectation_mode_distance", "haversine"),
                         mode_affectation=st.session_state.get("affectation_mode_affectation", "glouton"),
+                        affectations_forcees=st.session_state.get("affectation_forcees"),
                     )
                     st.session_state.affectation_resultats = resultats
                     st.session_state.affectation_tour_actuel = 2
@@ -742,6 +765,7 @@ def page_affectation():
                         nb_tours=3,
                         mode_distance=st.session_state.get("affectation_mode_distance", "haversine"),
                         mode_affectation=st.session_state.get("affectation_mode_affectation", "glouton"),
+                        affectations_forcees=st.session_state.get("affectation_forcees"),
                     )
                     st.session_state.affectation_resultats = resultats
                     st.session_state.affectation_tour_actuel = 3

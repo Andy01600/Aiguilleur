@@ -708,3 +708,91 @@ class TestTrouverFallback:
         }
         eq = self._equipe("69003 Lyon")
         assert _trouver_fallback(eq, evenements, CENTROIDES_TEST) is None
+
+
+# ---------------------------------------------------------------------------
+# Gale-Shapley — fallback des équipes épuisées avant la dernière itération
+# ---------------------------------------------------------------------------
+
+class TestFallbackGaleShapley:
+    """Régression bug du 2026-09-30 : `sans_voeu` était réinitialisée à chaque
+    itération de Gale-Shapley, seules les équipes épuisées à la DERNIÈRE
+    itération accédaient au fallback."""
+
+    def _eq(self, num, adresse, cp, voeux):
+        return Equipe(
+            numero=num, nom=f"Eq{num}", adresse=adresse, code_postal=cp, zone=None,
+            horodatage=datetime(2026, 9, 1, 8, num), nb_souhaite=1, voeux=voeux,
+        )
+
+    def test_equipe_epuisee_tot_recoit_un_fallback(self):
+        # Itération 1 : 2 (Elbeuf) perd Paris face à 1 (Paris), 4 (Dinard) perd
+        #               Nantes face à 3 (Nantes).
+        # Itération 2 : 2 n'a plus de vœu (épuisée) ; 4 tente Paris et perd.
+        # Itération 3 : 4 n'a plus de vœu (épuisée, dernière itération).
+        # Avant le fix, seule 4 obtenait Lyon en fallback ; 2 restait sans événement.
+        equipes = {
+            1: self._eq(1, "75011 Paris", "75011", ["Paris"]),
+            2: self._eq(2, "76500 Elbeuf", "76500", ["Paris"]),
+            3: self._eq(3, "44000 Nantes", "44000", ["Nantes"]),
+            4: self._eq(4, "35800 Dinard", "35800", ["Nantes", "Paris"]),
+        }
+        evenements = {
+            "Paris": Evenement("Paris", "75011 Paris", 1, None, 1),
+            "Nantes": Evenement("Nantes", "44000 Nantes", 1, None, 1),
+            "Lyon": Evenement("Lyon", "69003 Lyon", 5, None, 5),
+        }
+        res = executer_tour(
+            1, equipes, evenements, CENTROIDES_TEST, None, mode_affectation="gale_shapley"
+        )
+        assert res.non_affectees == []
+        assert equipes[2].affectations == ["Lyon"]
+        assert equipes[4].affectations == ["Lyon"]
+        assert evenements["Lyon"].places_restantes == 3
+
+
+class TestAffectationsForcees:
+    """Exceptions manuelles du 2026-10-22 : une équipe placée d'office avant le
+    Tour 1 consomme sa place et n'entre pas en concurrence."""
+
+    def _donnees(self):
+        voeux_df = pd.read_csv("data/templates/voeux_2025_2026.csv", sep=";")
+        comps_df = pd.read_csv("data/templates/evenements_2026_2027.csv", sep=";")
+        equipes_df = pd.read_csv("data/templates/equipes_2025_2026.csv", sep=";")
+        return voeux_df, comps_df, equipes_df
+
+    def test_equipe_forcee_placee_hors_voeux(self):
+        voeux_df, comps_df, equipes_df = self._donnees()
+        num = int(voeux_df["numero_equipe"].iloc[0])
+        ligne = voeux_df.iloc[0]
+        voeux = {str(ligne[c]).strip() for c in ligne.index if c.startswith("voeu_") and pd.notna(ligne[c])}
+        cible = next(n for n in comps_df["nom_evenement"] if n.strip() not in voeux)
+        resultats, alertes = lancer_affectation(
+            voeux_df=voeux_df, evenements_df=comps_df, equipes_df=equipes_df,
+            nb_tours=1, mode_affectation="gale_shapley",
+            affectations_forcees={num: cible},
+        )
+        assert resultats[0].nouvelles_affectations[num] == cible.strip()
+        assert any("affectée d'office" in a for a in alertes)
+
+    def test_place_forcee_consommee(self):
+        voeux_df, comps_df, equipes_df = self._donnees()
+        comps_df = comps_df.copy()
+        cible = comps_df["nom_evenement"].iloc[0]
+        comps_df.loc[0, "capacite_max"] = 1
+        num = int(voeux_df["numero_equipe"].iloc[-1])
+        resultats, _ = lancer_affectation(
+            voeux_df=voeux_df, evenements_df=comps_df, equipes_df=equipes_df,
+            nb_tours=1, mode_affectation="gale_shapley",
+            affectations_forcees={num: cible},
+        )
+        occupants = [n for n, e in resultats[0].nouvelles_affectations.items() if e == cible.strip()]
+        assert occupants == [num]
+
+    def test_equipe_inconnue_ignoree(self):
+        voeux_df, comps_df, equipes_df = self._donnees()
+        _, alertes = lancer_affectation(
+            voeux_df=voeux_df, evenements_df=comps_df, equipes_df=equipes_df,
+            nb_tours=1, affectations_forcees={99999: comps_df["nom_evenement"].iloc[0]},
+        )
+        assert any("ignorée" in a for a in alertes)
